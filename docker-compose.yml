@@ -1,0 +1,71 @@
+version: '3.3'
+services:
+  haproxy:
+    image: ghcr.io/0xf00f00/haproxy:latest
+    container_name: haproxy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./haproxy:/usr/local/etc/haproxy:ro
+    depends_on:
+      - caddy
+      - shadowtls
+      - cloak
+    environment:
+      - WEB_DOMAIN=${WEB_DOMAIN}
+      - SHADOWTLS_DOMAIN=${SHADOWTLS_DOMAIN}
+  caddy:
+    image: ghcr.io/0xf00f00/caddy-proxy:latest
+    container_name: caddy
+    restart: unless-stopped
+    environment:
+      - CERTIFICATE_EMAIL=${CERTIFICATE_EMAIL}
+      - DOMAIN=${WEB_DOMAIN}
+      - PROXY_USER=${HTTPS_PROXY_USER}
+      - PROXY_PASSWORD=${HTTPS_PROXY_PASSWORD}
+      - PROXY_REJECT_IPS=${HTTPS_PROXY_REJECT_IPS}
+      - PROXY_REJECT_DOMAINS=${HTTPS_PROXY_REJECT_DOMAINS}
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on:
+      - mozilla_mdn
+  mozilla_mdn:
+    image: ghcr.io/0xf00f00/mdn:latest
+    container_name: mozilla_mdn
+    restart: unless-stopped
+  shadowsocks:
+    image: ghcr.io/shadowsocks/ssserver-rust:latest
+    container_name: shadowsocks
+    restart: unless-stopped
+    environment:
+      - PASSWORD=${SHADOWSOCKS_PASSWORD}
+    volumes:
+      - ./shadowsocks/config.json:/etc/shadowsocks-rust/config.json:ro
+  shadowtls:
+    image: ghcr.io/0xf00f00/shadow-tls:latest
+    container_name: shadowtls
+    restart: unless-stopped
+    environment:
+      - MODE=server
+      - LISTEN=0.0.0.0:443
+      - SERVER=shadowsocks:443
+      - TLS=${SHADOWTLS_DOMAIN}:443
+      - PASSWORD=${SHADOWTLS_PASSWORD}
+    depends_on:
+      - shadowsocks
+  cloak:
+    image: ghcr.io/0xf00f00/cloak:latest
+    container_name: cloak
+    restart: unless-stopped
+    environment:
+      - CLOAK_PROXY_METHOD=shadowsocks
+      - CLOAK_PROXY_PROTOCOL=tcp
+      - CLOAK_PROXY_ADDRESS=shadowsocks:443
+      - CLOAK_BIND_ADDRESS=:443
+      - CLOAK_REDIR_ADDRESS=caddy:443
+      - CLOAK_PRIVATE_KEY=${CLOAK_PRIVATE_KEY}
+      - CLOAK_UUID=${CLOAK_UUID}
+    depends_on:
+      - shadowsocks

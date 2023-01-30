@@ -1,0 +1,7 @@
+{
+    "server":"0.0.0.0",
+    "server_port":443,
+    "password":"${PASSWORD}",
+    "timeout":60,
+    "method":"chacha20-ietf-poly1305"
+}
