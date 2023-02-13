@@ -49,9 +49,10 @@ services:
     restart: unless-stopped
     environment:
       - MODE=server
+      - V3=1
       - LISTEN=0.0.0.0:443
       - SERVER=shadowsocks:443
-      - TLS=${SHADOWTLS_DOMAIN}:443
+      - TLS=${SHADOWTLS_DOMAINS}
       - PASSWORD=${SHADOWTLS_PASSWORD}
     depends_on:
       - shadowsocks
