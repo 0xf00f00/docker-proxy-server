@@ -1,5 +1,15 @@
 version: '3.3'
 services:
+  haproxy-config:
+    image: alpine:latest
+    container_name: haproxy-config
+    restart: "no"
+    entrypoint: [ "/bin/sh", "-c", "/root/haproxy/update_config.sh" ]
+    volumes:
+      - ./haproxy:/root/haproxy:ro
+      - haproxy_data:/root/haproxy_data
+    environment:
+      - SHADOWTLS_DOMAINS=${SHADOWTLS_DOMAINS}
   haproxy:
     image: ghcr.io/0xf00f00/haproxy:latest
     container_name: haproxy
@@ -8,14 +18,14 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - ./haproxy:/usr/local/etc/haproxy:ro
+      - haproxy_data:/usr/local/etc/haproxy:ro
     depends_on:
+      - haproxy-config
       - caddy
       - shadowtls
       - cloak
     environment:
       - WEB_DOMAIN=${WEB_DOMAIN}
-      - SHADOWTLS_DOMAIN=${SHADOWTLS_DOMAIN}
   caddy:
     image: ghcr.io/0xf00f00/caddy-proxy:latest
     container_name: caddy
@@ -70,3 +80,7 @@ services:
       - CLOAK_UUID=${CLOAK_UUID}
     depends_on:
       - shadowsocks
+      - caddy
+
+volumes:
+  haproxy_data:
