@@ -9,6 +9,7 @@ services:
       - ./haproxy:/root/haproxy:ro
       - haproxy_data:/root/haproxy_data
     environment:
+      - WEB_DOMAINS=${WEB_DOMAINS}
       - SHADOWTLS_DOMAINS=${SHADOWTLS_DOMAINS}
   haproxy:
     image: ghcr.io/0xf00f00/haproxy:latest
@@ -24,15 +25,13 @@ services:
       - caddy
       - shadowtls
       - cloak
-    environment:
-      - WEB_DOMAIN=${WEB_DOMAIN}
   caddy:
     image: ghcr.io/0xf00f00/caddy-proxy:latest
     container_name: caddy
     restart: unless-stopped
     environment:
       - CERTIFICATE_EMAIL=${CERTIFICATE_EMAIL}
-      - DOMAIN=${WEB_DOMAIN}
+      - DOMAINS=${WEB_DOMAINS}
       - PROXY_USER=${HTTPS_PROXY_USER}
       - PROXY_PASSWORD=${HTTPS_PROXY_PASSWORD}
       - PROXY_REJECT_IPS=${HTTPS_PROXY_REJECT_IPS}
