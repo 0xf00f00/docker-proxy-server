@@ -12,7 +12,7 @@ services:
       - WEB_DOMAINS=${WEB_DOMAINS}
       - SHADOWTLS_DOMAINS=${SHADOWTLS_DOMAINS}
   haproxy:
-    image: ghcr.io/0xf00f00/haproxy:latest
+    image: haproxy:latest
     container_name: haproxy
     restart: unless-stopped
     ports:
@@ -63,6 +63,7 @@ services:
       - SERVER=shadowsocks:443
       - TLS=${SHADOWTLS_DOMAINS}
       - PASSWORD=${SHADOWTLS_PASSWORD}
+      - WILDCARD_SNI=all
     depends_on:
       - shadowsocks
   cloak:
