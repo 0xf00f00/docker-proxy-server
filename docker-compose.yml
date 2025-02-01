@@ -24,7 +24,7 @@ services:
       - haproxy-config
       - caddy
       - shadowtls
-      - cloak
+      # - cloak
   caddy:
     image: ghcr.io/0xf00f00/caddy-proxy:latest
     container_name: caddy
@@ -66,21 +66,21 @@ services:
       - WILDCARD_SNI=all
     depends_on:
       - shadowsocks
-  cloak:
-    image: ghcr.io/0xf00f00/cloak:latest
-    container_name: cloak
-    restart: unless-stopped
-    environment:
-      - CLOAK_PROXY_METHOD=shadowsocks
-      - CLOAK_PROXY_PROTOCOL=tcp
-      - CLOAK_PROXY_ADDRESS=shadowsocks:443
-      - CLOAK_BIND_ADDRESS=:443
-      - CLOAK_REDIR_ADDRESS=caddy:443
-      - CLOAK_PRIVATE_KEY=${CLOAK_PRIVATE_KEY}
-      - CLOAK_UUID=${CLOAK_UUID}
-    depends_on:
-      - shadowsocks
-      - caddy
+  # cloak:
+  #   image: ghcr.io/0xf00f00/cloak:latest
+  #   container_name: cloak
+  #   restart: unless-stopped
+  #   environment:
+  #     - CLOAK_PROXY_METHOD=shadowsocks
+  #     - CLOAK_PROXY_PROTOCOL=tcp
+  #     - CLOAK_PROXY_ADDRESS=shadowsocks:443
+  #     - CLOAK_BIND_ADDRESS=:443
+  #     - CLOAK_REDIR_ADDRESS=caddy:443
+  #     - CLOAK_PRIVATE_KEY=${CLOAK_PRIVATE_KEY}
+  #     - CLOAK_UUID=${CLOAK_UUID}
+  #   depends_on:
+  #     - shadowsocks
+  #     - caddy
 
 volumes:
   haproxy_data:
