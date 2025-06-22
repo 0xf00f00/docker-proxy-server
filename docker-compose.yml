@@ -9,6 +9,7 @@ services:
       - haproxy_data:/root/haproxy_data
     environment:
       - WEB_DOMAINS=${WEB_DOMAINS}
+      - FRP_DOMAIN=${FRP_DOMAIN}
       # - SHADOWTLS_DOMAINS=${SHADOWTLS_DOMAINS}
   haproxy:
     image: haproxy:latest
@@ -31,18 +32,32 @@ services:
     environment:
       - CERTIFICATE_EMAIL=${CERTIFICATE_EMAIL}
       - DOMAINS=${WEB_DOMAINS}
+      - FRP_DOMAIN=${FRP_DOMAIN}
       - PROXY_USER=${HTTPS_PROXY_USER}
       - PROXY_PASSWORD=${HTTPS_PROXY_PASSWORD}
       - PROXY_REJECT_IPS=${HTTPS_PROXY_REJECT_IPS}
       - PROXY_REJECT_DOMAINS=${HTTPS_PROXY_REJECT_DOMAINS}
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./data/caddy:/data/caddy
     depends_on:
       - mozilla_mdn
   mozilla_mdn:
     image: ghcr.io/0xf00f00/mdn:latest
     container_name: mozilla_mdn
     restart: unless-stopped
+
+  frps:
+    image: ghcr.io/fatedier/frps:v0.62.1
+    container_name: frps
+    restart: unless-stopped
+    volumes:
+      - ./frps.toml:/frps.toml:ro
+      - ./data/caddy/certificates/acme-v02.api.letsencrypt.org-directory:/data/certs:ro
+    environment:
+      - FRP_DOMAIN=${FRP_DOMAIN}
+      - FRP_AUTH_TOKEN=${FRP_AUTH_TOKEN}
+    command: -c /frps.toml
   # shadowsocks:
   #   image: ghcr.io/shadowsocks/ssserver-rust:latest
   #   container_name: shadowsocks

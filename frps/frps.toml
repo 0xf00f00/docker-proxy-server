@@ -1,0 +1,14 @@
+bindAddr = "0.0.0.0"
+bindPort = 7000
+
+transport.tls.force = true
+transport.tls.certFile = "/data/certs/{{ .Envs.FRP_DOMAIN }}.crt"
+transport.tls.keyFile = "/data/certs/{{ .Envs.FRP_DOMAIN }}.key"
+transport.tls.trustedCaFile = "/data/certs/{{ .Envs.FRP_DOMAIN }}.crt"
+
+auth.method = "token"
+auth.token = "{{ .Envs.FRP_AUTH_TOKEN }}"
+
+allowPorts = [
+  { single = 80 },
+]
