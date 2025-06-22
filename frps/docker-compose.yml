@@ -12,34 +12,6 @@ services:
       - FRP_DOMAIN=${FRP_DOMAIN}
     command: -c /frps.toml
 
-  openssl:
-    image: alpine/openssl:latest
-    container_name: openssl
-    restart: none
-    volumes:
-      - ./certs:/data/certs
-      - ./openssl.cnf:/data/openssl.cnf:ro
-    command: >
-      sh -c "
-      if [ -f /data/certs/server.crt ]; then
-        echo 'Certificates already exist, skipping generation.';
-        exit 0;
-      fi
-
-      openssl genrsa -out /data/certs/server.key 2048 &&
-
-      openssl req -new -sha256 -key /data/certs/server.key
-      -subj "/C=XX/ST=DEFAULT/L=DEFAULT/O=DEFAULT/CN=${FRP_DOMAIN}"
-      -reqexts SAN
-      -config <(cat /data/openssl.cnf <(printf "\n[SAN]\nsubjectAltName=DNS:localhost,IP:127.0.0.1,DNS:${FRP_DOMAIN}"))
-      -out /data/certs/server.csr &&
-
-      openssl x509 -req -days 5000 -sha256 \
-        -in /data/certs/server.csr -CA /data/certs/ca.crt -CAkey /data/certs/ca.key -CAcreateserial \
-        -extfile <(printf "subjectAltName=DNS:localhost,IP:127.0.0.1,DNS:${FRP_DOMAIN}") \
-        -out /data/certs/server.crt
-      "
-
   # acme-sh-issue:
   #   image: neilpang/acme.sh
   #   container_name: acme.sh-issue

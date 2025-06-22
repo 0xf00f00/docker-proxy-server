@@ -1,2 +1,4 @@
 .env
 .DS_Store
+frsp/certs/*
+!frsp/certs/.gitkeep
