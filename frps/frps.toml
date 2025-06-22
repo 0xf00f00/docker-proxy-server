@@ -15,5 +15,5 @@ auth.method = "token"
 auth.token = "{{ .Envs.FRP_AUTH_TOKEN }}"
 
 allowPorts = [
-  { single = 80 },
+  { single = 2280 },
 ]
