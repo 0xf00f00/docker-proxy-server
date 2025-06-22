@@ -52,7 +52,7 @@ services:
     container_name: frps
     restart: unless-stopped
     volumes:
-      - ./frps.toml:/frps.toml:ro
+      - ./frps/frps.toml:/frps.toml:ro
       - ./data/caddy/certificates/acme-v02.api.letsencrypt.org-directory:/data/certs:ro
     environment:
       - FRP_DOMAIN=${FRP_DOMAIN}
