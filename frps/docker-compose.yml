@@ -6,11 +6,11 @@ services:
     network_mode: host
     volumes:
       - ./frps.toml:/frps.toml:ro
+      - certs:/data/certs
     environment:
       - FRP_AUTH_TOKEN=${FRP_AUTH_TOKEN}
+      - FRP_DOMAIN=${FRP_DOMAIN}
     command: -c /frps.toml
-    labels:
-      - sh.acme.autoload.domain=${FRP_DOMAIN}
 
   acme-sh-issue:
     image: neilpang/acme.sh
@@ -28,13 +28,6 @@ services:
     command: daemon
     volumes:
       - certs:/acme.sh
-      - /var/run/docker.sock:/var/run/docker.sock 
-    environment:
-      - DEPLOY_DOCKER_CONTAINER_LABEL=sh.acme.autoload.domain=${FRP_DOMAIN}
-      - DEPLOY_DOCKER_CONTAINER_KEY_FILE=/data/certs/key.key
-      - DEPLOY_DOCKER_CONTAINER_CERT_FILE="/data/certs/cert.crt"
-      - DEPLOY_DOCKER_CONTAINER_CA_FILE="/data/certs/ca.crt"
-      - DEPLOY_DOCKER_CONTAINER_FULLCHAIN_FILE="/data/certs/full.pem"
       
 volumes:
   certs:
