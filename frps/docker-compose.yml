@@ -18,13 +18,12 @@ services:
   acme-sh-issue:
     image: neilpang/acme.sh
     container_name: acme.sh-issue
-    command: --issue --dns dns_cf -d ${FRP_DOMAIN}
+    command: --issue --dns dns_cf -d ${FRP_DOMAIN} --accountemail ${CERTIFICATE_EMAIL} --server letsencrypt
     volumes:
       - certs:/acme.sh
     environment:
-      - CF_Token=${CF_KEY}
+      - CF_Token=${CF_TOKEN}
       - CF_Zone_ID=${CF_ZONE_ID}
-      - CF_Email=${CF_EMAIL}
 
   acme-sh:
     image: neilpang/acme.sh
