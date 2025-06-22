@@ -6,7 +6,7 @@
                 -Server
         }
 }
-:443, {$DOMAINS}, {$FRP_DOMAIN} {
+:443, {$DOMAINS} {
 	tls {$CERTIFICATE_EMAIL}
 
 	forward_proxy {
