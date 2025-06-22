@@ -22,7 +22,8 @@ services:
     volumes:
       - certs:/acme.sh
     environment:
-      - CF_Key=${CF_KEY}
+      - CF_Token=${CF_KEY}
+      - CF_Zone_ID=${CF_ZONE_ID}
       - CF_Email=${CF_EMAIL}
 
   acme-sh:
