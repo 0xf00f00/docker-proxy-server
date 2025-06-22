@@ -5,7 +5,7 @@ services:
     restart: unless-stopped
     network_mode: host
     volumes:
-      - ./frps/frps.toml:/frps.toml:ro
+      - ./frps.toml:/frps.toml:ro
     environment:
       - FRP_AUTH_TOKEN=${FRP_AUTH_TOKEN}
     command: -c /frps.toml
