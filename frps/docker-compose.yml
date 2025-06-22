@@ -6,7 +6,6 @@ services:
     network_mode: host
     volumes:
       - ./frps/frps.toml:/frps.toml:ro
-      - certs:/data/certs:ro
     environment:
       - FRP_AUTH_TOKEN=${FRP_AUTH_TOKEN}
     command: -c /frps.toml
@@ -23,8 +22,8 @@ services:
     volumes:
       - certs:/acme.sh
     environment:
-      - CF_Key=${CF_Key}
-      - CF_Email=${CF_Email}
+      - CF_Key=${CF_KEY}
+      - CF_Email=${CF_EMAIL}
 
   acme-sh:
     image: neilpang/acme.sh
@@ -42,3 +41,5 @@ services:
     depends_on:
       - acme-sh-issue
       
+volumes:
+  certs:
