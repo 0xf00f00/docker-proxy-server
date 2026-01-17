@@ -11,6 +11,47 @@ Works best with [docker-proxy-client](https://github.com/0xf00f00/docker-proxy-c
 docker-compose up -d
 ```
 
+## dnstt DNS Tunnel (Optional)
+
+DNS tunnel using [dnstt](https://www.bamsoftware.com/software/dnstt).
+
+### Setup
+
+1. Configure your domain's DNS records:
+   | Type | Name | Points to |
+   |------|------|-----------|
+   | A | `tns.example.com` | `YOUR_SERVER_IP` |
+   | NS | `t.example.com` | `tns.example.com` |
+
+2. Add to your `.env` file:
+   ```
+   DNSTT_DOMAIN=t.example.com
+   DNSTT_SSH_USER=tunnel
+   DNSTT_SSH_PASSWORD=your-secure-password
+   ```
+
+3. Start with the dnstt profile:
+   ```bash
+   docker compose --profile dnstt up -d
+   ```
+
+4. Get the public key from logs:
+   ```bash
+   docker logs dnstt-server
+   ```
+
+### Client Connection
+
+```bash
+# Start dnstt-client with the public key from step 4
+./dnstt-client -doh https://cloudflare-dns.com/dns-query -pubkey PUBLIC_KEY t.example.com 127.0.0.1:7000
+
+# Connect via SSH with SOCKS proxy
+ssh -D 1080 -p 7000 tunnel@localhost
+```
+
+Applications can use `localhost:1080` as a SOCKS proxy.
+
 ## Cloudflare setup
 
 ### Get the teams JWT token from Cloudflare

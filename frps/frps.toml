@@ -1,0 +1,19 @@
+bindAddr = "0.0.0.0"
+bindPort = 443
+
+transport.tls.force = true
+transport.tls.certFile = "/data/certs/server.crt"
+transport.tls.keyFile = "/data/certs/server.key"
+transport.tls.trustedCaFile = "/data/certs/ca.crt"
+
+
+#transport.tls.certFile = "/data/certs/{{ .Envs.FRP_DOMAIN }}_ecc/fullchain.cer"
+#transport.tls.keyFile = "/data/certs/{{ .Envs.FRP_DOMAIN }}_ecc/{{ .Envs.FRP_DOMAIN }}.key"
+#transport.tls.trustedCaFile = "/data/certs/{{ .Envs.FRP_DOMAIN }}_ecc/ca.cer"
+
+auth.method = "token"
+auth.token = "{{ .Envs.FRP_AUTH_TOKEN }}"
+
+allowPorts = [
+  { single = 2280 },
+]

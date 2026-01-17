@@ -1,0 +1,33 @@
+services:
+  frps:
+    image: ghcr.io/fatedier/frps:v0.62.1
+    container_name: frps
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./frps.toml:/frps.toml:ro
+      - ./certs:/data/certs
+    environment:
+      - FRP_AUTH_TOKEN=${FRP_AUTH_TOKEN}
+      - FRP_DOMAIN=${FRP_DOMAIN}
+    command: -c /frps.toml
+
+  # acme-sh-issue:
+  #   image: neilpang/acme.sh
+  #   container_name: acme.sh-issue
+  #   command: --issue --dns dns_cf -d ${FRP_DOMAIN} --accountemail ${CERTIFICATE_EMAIL} --server letsencrypt
+  #   volumes:
+  #     - certs:/acme.sh
+  #   environment:
+  #     - CF_Token=${CF_TOKEN}
+  #     - CF_Zone_ID=${CF_ZONE_ID}
+
+  # acme-sh:
+  #   image: neilpang/acme.sh
+  #   container_name: acme.sh    
+  #   command: daemon
+  #   volumes:
+  #     - certs:/acme.sh
+      
+# volumes:
+#   certs:

@@ -43,6 +43,7 @@ services:
     image: ghcr.io/0xf00f00/mdn:latest
     container_name: mozilla_mdn
     restart: unless-stopped
+
   # shadowsocks:
   #   image: ghcr.io/shadowsocks/ssserver-rust:latest
   #   container_name: shadowsocks
@@ -81,5 +82,34 @@ services:
   #     - shadowsocks
   #     - caddy
 
+  dnstt-server:
+    image: ghcr.io/0xf00f00/dnstt-server:latest
+    container_name: dnstt-server
+    restart: unless-stopped
+    profiles:
+      - dnstt
+    ports:
+      - "53:5300/udp"
+    volumes:
+      - dnstt-keys:/etc/dnstt
+    environment:
+      - DNSTT_DOMAIN=${DNSTT_DOMAIN}
+      - DNSTT_FORWARD_ADDR=dnstt-ssh:22
+      - DNSTT_MTU=1232
+    depends_on:
+      - dnstt-ssh
+
+  dnstt-ssh:
+    image: linuxserver/openssh-server
+    container_name: dnstt-ssh
+    restart: unless-stopped
+    profiles:
+      - dnstt
+    environment:
+      - PASSWORD_ACCESS=true
+      - USER_NAME=${DNSTT_SSH_USER:-tunnel}
+      - USER_PASSWORD=${DNSTT_SSH_PASSWORD}
+
 volumes:
   haproxy_data:
+  dnstt-keys:
