@@ -106,6 +106,9 @@ services:
     profiles:
       - dnstt
     environment:
+      - DOCKER_MODS=linuxserver/mods:openssh-server-ssh-tunnel
+      - SHELL_NOLOGIN=true
+      - SUDO_ACCESS=false
       - PASSWORD_ACCESS=true
       - USER_NAME=${DNSTT_SSH_USER:-tunnel}
       - USER_PASSWORD=${DNSTT_SSH_PASSWORD}
