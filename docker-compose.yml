@@ -94,7 +94,7 @@ services:
       - dnstt-keys:/etc/dnstt
     environment:
       - DNSTT_DOMAIN=${DNSTT_DOMAIN}
-      - DNSTT_FORWARD_ADDR=dnstt-ssh:2222
+      - DNSTT_FORWARD_ADDR=dnstt-ssh:22
       - DNSTT_MTU=1232
     depends_on:
       - dnstt-ssh
@@ -110,6 +110,7 @@ services:
       - SHELL_NOLOGIN=true
       - SUDO_ACCESS=false
       - PASSWORD_ACCESS=true
+      - LISTEN_PORT=22
       - USER_NAME=${DNSTT_SSH_USER:-tunnel}
       - USER_PASSWORD=${DNSTT_SSH_PASSWORD}
 
