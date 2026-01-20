@@ -107,7 +107,7 @@ services:
       - dnstt
     environment:
       - DOCKER_MODS=linuxserver/mods:openssh-server-ssh-tunnel
-      - SHELL_NOLOGIN=true
+      - SHELL_NOLOGIN=false
       - SUDO_ACCESS=false
       - PASSWORD_ACCESS=true
       - LISTEN_PORT=22
