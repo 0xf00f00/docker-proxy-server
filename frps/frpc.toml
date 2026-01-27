@@ -1,0 +1,30 @@
+serverAddr = "127.0.0.1"
+serverPort = 443
+
+auth.method = "token"
+auth.token = "{{ .Envs.FRP_AUTH_TOKEN }}"
+
+loginFailExit = false
+
+transport.protocol = "tcp"
+transport.tls.enable = true
+
+transport.tls.certFile = "/data/certs/client.crt"
+transport.tls.keyFile = "/data/certs/client.key"
+transport.tls.trustedCaFile = "/data/certs/ca.crt"
+
+# DNS Provider (sudp)
+[[proxies]]
+name = "server_dns"
+type = "sudp"
+localIP = "1.1.1.1" 
+localPort = 53
+secretKey = "{{ .Envs.FRP_VISITOR_SK }}"
+
+# SOCKS5 Provider (stcp)
+[[proxies]]
+name = "server_socks"
+type = "stcp"
+secretKey = "{{ .Envs.FRP_VISITOR_SK }}"
+[proxies.plugin]
+type = "socks5"
