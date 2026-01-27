@@ -24,6 +24,8 @@ services:
       - FRP_AUTH_TOKEN=${FRP_AUTH_TOKEN}
       - FRP_VISITOR_SK=${FRP_VISITOR_SK}
     command: -c /frpc.toml
+    depends_on:
+      - frps
 
   # acme-sh-issue:
   #   image: neilpang/acme.sh
