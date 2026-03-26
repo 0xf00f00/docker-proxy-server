@@ -9,7 +9,6 @@ services:
       - haproxy_data:/root/haproxy_data
     environment:
       - WEB_DOMAINS=${WEB_DOMAINS}
-      # - SHADOWTLS_DOMAINS=${SHADOWTLS_DOMAINS}
   haproxy:
     image: haproxy:latest
     container_name: haproxy
@@ -22,8 +21,6 @@ services:
     depends_on:
       - haproxy-config
       - caddy
-      # - shadowtls
-      # - cloak
   caddy:
     image: ghcr.io/0xf00f00/caddy-proxy:latest
     container_name: caddy
@@ -44,44 +41,6 @@ services:
     container_name: mozilla_mdn
     restart: unless-stopped
 
-  # shadowsocks:
-  #   image: ghcr.io/shadowsocks/ssserver-rust:latest
-  #   container_name: shadowsocks
-  #   restart: unless-stopped
-  #   environment:
-  #     - PASSWORD=${SHADOWSOCKS_PASSWORD}
-  #   volumes:
-  #     - ./shadowsocks/config.json:/etc/shadowsocks-rust/config.json:ro
-  # shadowtls:
-  #   image: ghcr.io/0xf00f00/shadow-tls:latest
-  #   container_name: shadowtls
-  #   restart: unless-stopped
-  #   environment:
-  #     - MODE=server
-  #     - V3=1
-  #     - LISTEN=0.0.0.0:443
-  #     - SERVER=shadowsocks:443
-  #     - TLS=${SHADOWTLS_DOMAINS}
-  #     - PASSWORD=${SHADOWTLS_PASSWORD}
-  #     - WILDCARD_SNI=all
-  #   depends_on:
-  #     - shadowsocks
-  # cloak:
-  #   image: ghcr.io/0xf00f00/cloak:latest
-  #   container_name: cloak
-  #   restart: unless-stopped
-  #   environment:
-  #     - CLOAK_PROXY_METHOD=shadowsocks
-  #     - CLOAK_PROXY_PROTOCOL=tcp
-  #     - CLOAK_PROXY_ADDRESS=shadowsocks:443
-  #     - CLOAK_BIND_ADDRESS=:443
-  #     - CLOAK_REDIR_ADDRESS=caddy:443
-  #     - CLOAK_PRIVATE_KEY=${CLOAK_PRIVATE_KEY}
-  #     - CLOAK_UUID=${CLOAK_UUID}
-  #   depends_on:
-  #     - shadowsocks
-  #     - caddy
-
   dnstt-server:
     image: ghcr.io/0xf00f00/dnstt-server:latest
     container_name: dnstt-server
@@ -94,10 +53,33 @@ services:
       - dnstt-keys:/etc/dnstt
     environment:
       - DNSTT_DOMAIN=${DNSTT_DOMAIN}
-      - DNSTT_FORWARD_ADDR=dnstt-ssh:22
+      - DNSTT_FORWARD_ADDR=dnstt-multiplexer:4444
       - DNSTT_MTU=1232
     depends_on:
+      - dnstt-multiplexer
+
+  dnstt-multiplexer:
+    image: ghcr.io/yrutschle/sslh:latest
+    container_name: dnstt-multiplexer
+    restart: unless-stopped
+    profiles:
+      - dnstt
+    # -p listens on 4444. Route ssh to dnstt-ssh:22, socks5 to dnstt-socks:1080.
+    # --anyprot routes everything else to ssh to maintain backward compatibility
+    command: ["-f", "-p", "0.0.0.0:4444", "--ssh", "dnstt-ssh:22", "--socks5", "dnstt-socks:1080", "--anyprot", "dnstt-ssh:22"]
+    depends_on:
       - dnstt-ssh
+      - dnstt-socks
+
+  dnstt-socks:
+    image: serjs/go-socks5-proxy:latest
+    container_name: dnstt-socks
+    restart: unless-stopped
+    profiles:
+      - dnstt
+    environment:
+      - PROXY_USER=${DNSTT_SSH_USER:-tunnel}
+      - PROXY_PASSWORD=${DNSTT_SSH_PASSWORD}
 
   dnstt-ssh:
     image: linuxserver/openssh-server
