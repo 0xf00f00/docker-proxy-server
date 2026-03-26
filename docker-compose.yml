@@ -95,6 +95,7 @@ services:
       - LISTEN_PORT=22
       - USER_NAME=${DNSTT_SSH_USER:-tunnel}
       - USER_PASSWORD=${DNSTT_SSH_PASSWORD}
+      - PUBLIC_KEY=${DNSTT_SSH_PUBLIC_KEY}
 
 volumes:
   haproxy_data:
