@@ -36,6 +36,20 @@ services:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
     depends_on:
       - mozilla_mdn
+      - naive
+
+  # Sing-box naive INBOUND
+  naive:
+    image: ghcr.io/sagernet/sing-box:latest
+    container_name: naive
+    restart: unless-stopped
+    environment:
+      - PROXY_USER=${HTTPS_PROXY_USER}
+      - PROXY_PASSWORD=${HTTPS_PROXY_PASSWORD}
+    volumes:
+      - ./naive/entrypoint.sh:/entrypoint.sh:ro
+    entrypoint: ["/bin/sh", "/entrypoint.sh"]
+
   mozilla_mdn:
     image: ghcr.io/0xf00f00/mdn:latest
     container_name: mozilla_mdn

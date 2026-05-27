@@ -9,20 +9,33 @@
 :443, {$DOMAINS} {
 	tls {$CERTIFICATE_EMAIL}
 
-	forward_proxy {
-		basic_auth {$PROXY_USER} {$PROXY_PASSWORD}
-		hide_ip
-		hide_via
-		probe_resistance
-
-		acl {
-			deny 10.0.0.0/8 127.0.0.0/8 172.16.0.0/12 192.168.0.0/16 ::1/128 fe80::/10
-			deny {$PROXY_REJECT_DOMAINS}
-			allow all
+	# Route CONNECT requests with "Tunnel-Mode: udp" header to singbox-naive.
+	@naive {
+		method CONNECT
+		header Tunnel-Mode udp
+	}
+	handle @naive {
+		reverse_proxy h2c://naive:1080 {
+			header_up Proxy-Authorization {header.Proxy-Authorization}
 		}
 	}
 
-	reverse_proxy mozilla_mdn:5000 {
-		trusted_proxies private_ranges
+	handle {
+		forward_proxy {
+			basic_auth {$PROXY_USER} {$PROXY_PASSWORD}
+			hide_ip
+			hide_via
+			probe_resistance
+
+			acl {
+				deny 10.0.0.0/8 127.0.0.0/8 172.16.0.0/12 192.168.0.0/16 ::1/128 fe80::/10
+				deny {$PROXY_REJECT_DOMAINS}
+				allow all
+			}
+		}
+
+		reverse_proxy mozilla_mdn:5000 {
+			trusted_proxies private_ranges
+		}
 	}
 }
