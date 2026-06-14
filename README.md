@@ -50,25 +50,21 @@ cd warp.sh
 
 ### Add the WireGuard configuration to the server
 1. Copy the generated config to `/etc/wireguard/wgcf.conf` on the server.
-2. Add the following to the `[Interface]` section of the config:
-```ini
-PreUp = /usr/local/bin/update_routes.sh
-PostUp = iptables -A FORWARD -i wgcf -j ACCEPT
-PostUp = iptables -t nat -A POSTROUTING -o ens3 -j MASQUERADE
-PostUp = ip6tables -A FORWARD -i wgcf -j ACCEPT
-PostUp = ip6tables -t nat -A POSTROUTING -o ens3 -j MASQUERADE
-PostDown = iptables -D FORWARD -i wgcf -j ACCEPT
-PostDown = iptables -t nat -D POSTROUTING -o ens3 -j MASQUERADE
-PostDown = ip6tables -D FORWARD -i wgcf -j ACCEPT
-PostDown = ip6tables -t nat -D POSTROUTING -o ens3 -j MASQUERADE
-```
-
-
-### Set up routing for client IPs
-This prevents them from being disconnected from the server after the VPN connection is established.
-
-1. Copy `./system/wireguard-routes/update_routes.sh` to your server (e.g., `/usr/local/bin/update_routes.sh`).
-2. Add the following to your crontab (`sudo crontab -e`):
+2. Install the routing helper:
 ```bash
-*/5 * * * * /usr/local/bin/update_routes.sh >> /var/log/update_routes.log 2>&1
+sudo cp ./system/wireguard-routes/warp-routing.sh /usr/local/bin/warp-routing.sh
+sudo chmod +x /usr/local/bin/warp-routing.sh
 ```
+3. Add these two lines to the `[Interface]` section of `/etc/wireguard/wgcf.conf`:
+```ini
+PostUp   = /usr/local/bin/warp-routing.sh up   %i
+PostDown = /usr/local/bin/warp-routing.sh down %i
+```
+4. Make the loose `rp_filter` setting survive reboots:
+```bash
+echo 'net.ipv4.conf.all.rp_filter=2' | sudo tee /etc/sysctl.d/99-warp-routing.conf
+sudo sysctl --system
+```
+5. Bring the tunnel up: `sudo systemctl enable --now wg-quick@wgcf`
+
+The helper handles everything a full tunnel (`AllowedIPs = 0.0.0.0/0, ::/0`) needs — forwarding, NAT, and routing client replies back out the WAN so connected clients aren't dropped when the tunnel takes over the default route. The interface name is auto-detected, so there's nothing to hardcode.
