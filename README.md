@@ -60,11 +60,6 @@ sudo chmod +x /usr/local/bin/warp-routing.sh
 PostUp   = /usr/local/bin/warp-routing.sh up   %i
 PostDown = /usr/local/bin/warp-routing.sh down %i
 ```
-4. Make the loose `rp_filter` setting survive reboots:
-```bash
-echo 'net.ipv4.conf.all.rp_filter=2' | sudo tee /etc/sysctl.d/99-warp-routing.conf
-sudo sysctl --system
-```
-5. Bring the tunnel up: `sudo systemctl enable --now wg-quick@wgcf`
+4. Bring the tunnel up: `sudo systemctl enable --now wg-quick@wgcf`
 
 The helper handles everything a full tunnel (`AllowedIPs = 0.0.0.0/0, ::/0`) needs — forwarding, NAT, and routing client replies back out the WAN so connected clients aren't dropped when the tunnel takes over the default route. The interface name is auto-detected, so there's nothing to hardcode.

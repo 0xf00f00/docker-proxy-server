@@ -23,8 +23,8 @@ if [ -z "${WAN_IFACE}" ]; then
 fi
 
 up() {
-    # Loose reverse-path filtering, else inbound packets get dropped.
-    sysctl -w net.ipv4.conf.all.rp_filter=2 >/dev/null
+    # Loose reverse-path filtering on the WAN only, else inbound packets get
+    # dropped (asymmetric: in on WAN, default route on the tunnel).
     sysctl -w "net.ipv4.conf.${WAN_IFACE}.rp_filter=2" >/dev/null
 
     # Forward + NAT.
