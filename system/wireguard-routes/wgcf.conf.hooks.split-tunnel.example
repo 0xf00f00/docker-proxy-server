@@ -1,0 +1,57 @@
+# Inline WireGuard hooks for SPLIT-TUNNEL WARP — paste into the [Interface]
+# section of /etc/wireguard/wgcf.conf. See ../../README.md for the why.
+#
+# Model: the host default route stays on the WAN. We send ONLY user traffic
+# (Docker proxies, Tailscale exit-node, your own WireGuard subnet) into a
+# dedicated WARP table. Because WARP is never the default route, there is no
+# inbound-reply problem, no conntrack marking, no Tailscale carve-out, no
+# rp_filter requirement, and SSH/host traffic is never at risk.
+#
+# Why inline (not a script): Ubuntu's enforced AppArmor profile for wg-quick
+# blocks executing scripts in /usr/local/bin, but allows iptables/ip/sysctl.
+#
+# Before using:
+#   - Remove the `DNS =` line from wgcf.conf (its teardown can be AppArmor-denied
+#     on systemd-resolved hosts, which aborts cleanup and locks you out).
+#   - `Table = off` is REQUIRED: it tells wg-quick to touch no routes or rules,
+#     so the WAN default route (and the wgcf handshake itself) stay on the main
+#     table. We add everything explicitly below. `%i` = the tunnel interface.
+#   - Adjust the source selectors to match your setup:
+#       * 172.16.0.0/12      covers all Docker bridge networks (default).
+#       * 10.x.x.0/24         your own WireGuard client subnet, if you run one.
+#                             Delete those lines if you don't.
+#   - Tailscale exit node? See the OPTIONAL block at the bottom of this file.
+
+Table = off
+
+# --- Route the WARP table out the tunnel -------------------------------------
+PostUp = ip route add default dev %i table 51820
+PostUp = ip -6 route add default dev %i table 51820
+
+# --- Opt user traffic INTO the WARP table ------------------------------------
+PostUp = ip rule add from 172.16.0.0/12 table 51820 pref 100
+# PostUp = ip rule add from 10.13.13.0/24 table 51820 pref 102
+# IPv6 Docker/WireGuard subnets: add `ip -6 rule add from <prefix> ...` here if
+# you hand IPv6 to clients. If you do NOT, disable IPv6 on the host so clients
+# cannot leak straight out the server's real IPv6 (bypassing WARP).
+
+# --- NAT user traffic onto the tunnel ----------------------------------------
+PostUp = iptables  -t nat -A POSTROUTING -o %i -j MASQUERADE
+PostUp = ip6tables -t nat -A POSTROUTING -o %i -j MASQUERADE
+
+# --- Teardown (|| true so a missing rule never aborts cleanup) ----------------
+PostDown = iptables  -t nat -D POSTROUTING -o %i -j MASQUERADE || true
+PostDown = ip6tables -t nat -D POSTROUTING -o %i -j MASQUERADE || true
+PostDown = ip rule del from 172.16.0.0/12 table 51820 pref 100 || true
+# PostDown = ip rule del from 10.13.13.0/24 table 51820 pref 102 || true
+PostDown = ip route flush table 51820 || true
+PostDown = ip -6 route flush table 51820 || true
+
+# --- OPTIONAL: Tailscale exit node -------------------------------------------
+# Only if this box is a Tailscale exit node. Opts traffic forwarded from the
+# tailnet INTO WARP (matched by inbound interface, before Tailscale's
+# masquerade). Delete this block entirely if you don't run Tailscale.
+# PostUp = ip rule add iif tailscale0 table 51820 pref 101
+# PostUp = ip -6 rule add iif tailscale0 table 51820 pref 101
+# PostDown = ip rule del iif tailscale0 table 51820 pref 101 || true
+# PostDown = ip -6 rule del iif tailscale0 table 51820 pref 101 || true
