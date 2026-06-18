@@ -1,62 +1,71 @@
-# Inline WireGuard hooks for full-tunnel WARP — paste into the [Interface]
-# section of /etc/wireguard/wgcf.conf. See ../../README.md for the why.
-#
-# Why inline (not a script): Ubuntu's enforced AppArmor profile for wg-quick
-# blocks executing scripts in /usr/local/bin, but allows iptables/ip/sysctl.
+# Inline WireGuard hooks for FULL-TUNNEL WARP — paste into the [Interface]
+# section of /etc/wireguard/wgcf.conf. The whole host egresses via WARP; the
+# rules below mark inbound connections so their replies still leave via the WAN
+# (otherwise every inbound proxy/SSH handshake times out).
 #
 # Before using:
 #   - Replace every `eth0` with your WAN interface (`ip route show default`).
-#     Leave `%i` as-is — wg-quick substitutes the tunnel interface name.
-#   - Remove the `DNS =` line from wgcf.conf (its teardown can be AppArmor-denied
-#     on systemd-resolved hosts, which aborts cleanup and locks you out).
+#     Leave `%i` as-is — wg-quick fills in the tunnel name.
+#   - Remove the `DNS =` line from wgcf.conf (its teardown can lock you out).
+#   - Hooks are idempotent + `set -e` safe: rules dedup before adding (ip rule
+#     via a `while ... del` flush, iptables via `-C || -A`) so cycling the link
+#     never stacks duplicate/mis-ordered rules. Keep that pattern.
 
-# --- Return-path: keep inbound clients (public IP) from being dropped ---------
-# Mark new inbound conns on the WAN; route their replies back out the WAN.
-# ctstate NEW avoids marking WARP's own return flow (which would loop it).
-PreUp = iptables  -t mangle -A PREROUTING -i eth0 -m conntrack --ctstate NEW -j CONNMARK --set-xmark 0x1/0x1
-PreUp = iptables  -t mangle -A PREROUTING -j CONNMARK --restore-mark --nfmask 0x1 --ctmask 0x1
-PreUp = iptables  -t mangle -A OUTPUT     -j CONNMARK --restore-mark --nfmask 0x1 --ctmask 0x1
-PreUp = ip6tables -t mangle -A PREROUTING -i eth0 -m conntrack --ctstate NEW -j CONNMARK --set-xmark 0x1/0x1
-PreUp = ip6tables -t mangle -A PREROUTING -j CONNMARK --restore-mark --nfmask 0x1 --ctmask 0x1
-PreUp = ip6tables -t mangle -A OUTPUT     -j CONNMARK --restore-mark --nfmask 0x1 --ctmask 0x1
+# --- Return-path: mark new inbound WAN conns, route their replies out the WAN.
+PreUp = iptables  -t mangle -C PREROUTING -i eth0 -m conntrack --ctstate NEW -j CONNMARK --set-xmark 0x1/0x1 2>/dev/null || iptables  -t mangle -A PREROUTING -i eth0 -m conntrack --ctstate NEW -j CONNMARK --set-xmark 0x1/0x1
+PreUp = iptables  -t mangle -C PREROUTING -j CONNMARK --restore-mark --nfmask 0x1 --ctmask 0x1 2>/dev/null || iptables  -t mangle -A PREROUTING -j CONNMARK --restore-mark --nfmask 0x1 --ctmask 0x1
+PreUp = iptables  -t mangle -C OUTPUT     -j CONNMARK --restore-mark --nfmask 0x1 --ctmask 0x1 2>/dev/null || iptables  -t mangle -A OUTPUT     -j CONNMARK --restore-mark --nfmask 0x1 --ctmask 0x1
+PreUp = ip6tables -t mangle -C PREROUTING -i eth0 -m conntrack --ctstate NEW -j CONNMARK --set-xmark 0x1/0x1 2>/dev/null || ip6tables -t mangle -A PREROUTING -i eth0 -m conntrack --ctstate NEW -j CONNMARK --set-xmark 0x1/0x1
+PreUp = ip6tables -t mangle -C PREROUTING -j CONNMARK --restore-mark --nfmask 0x1 --ctmask 0x1 2>/dev/null || ip6tables -t mangle -A PREROUTING -j CONNMARK --restore-mark --nfmask 0x1 --ctmask 0x1
+PreUp = ip6tables -t mangle -C OUTPUT     -j CONNMARK --restore-mark --nfmask 0x1 --ctmask 0x1 2>/dev/null || ip6tables -t mangle -A OUTPUT     -j CONNMARK --restore-mark --nfmask 0x1 --ctmask 0x1
 
-# Policy rules go in PostUp, NOT PreUp: wg-quick auto-assigns its own rule to
-# (lowest-existing-priority - 1). With no ip rules in PreUp, wg lands high
-# (~5209, just below Tailscale) and ours at 80/81/100 win.
+# Policy rules go in PostUp (not PreUp) so wg-quick's auto rule lands above ours.
 
-# --- Optional: keep Tailscale working alongside full-tunnel WARP --------------
-# Only if the box runs Tailscale. Without this, WARP swallows tailnet + MagicDNS
-# (and your SSH if it's over Tailscale). Values are Tailscale's Linux defaults
-# (same on every tailnet); confirm the table with `ip rule show` (lookup N near
-# pref 5270). Delete this whole block if you don't run Tailscale.
-PostUp = ip rule add from all fwmark 0x80000/0xff0000 lookup main pref 80
-PostUp = ip rule add to 100.64.0.0/10 lookup 52 pref 81
-PostUp = ip -6 rule add from all fwmark 0x80000/0xff0000 lookup main pref 80
-PostUp = ip -6 rule add to fd7a:115c:a1e0::/48 lookup 52 pref 81
+# --- OPTIONAL Tailscale: keep tailnet + MagicDNS (and Tailscale SSH) off WARP.
+# Values are Tailscale's Linux defaults; confirm table 52 via `ip rule show`.
+# Delete this block if you don't run Tailscale.
+PostUp = while ip rule del from all fwmark 0x80000/0xff0000 lookup main pref 80 2>/dev/null; do true; done; ip rule add from all fwmark 0x80000/0xff0000 lookup main pref 80
+PostUp = while ip rule del to 100.64.0.0/10 lookup 52 pref 81 2>/dev/null; do true; done; ip rule add to 100.64.0.0/10 lookup 52 pref 81
+PostUp = while ip -6 rule del from all fwmark 0x80000/0xff0000 lookup main pref 80 2>/dev/null; do true; done; ip -6 rule add from all fwmark 0x80000/0xff0000 lookup main pref 80
+PostUp = while ip -6 rule del to fd7a:115c:a1e0::/48 lookup 52 pref 81 2>/dev/null; do true; done; ip -6 rule add to fd7a:115c:a1e0::/48 lookup 52 pref 81
 
-# --- Return-path rule + forwarding/NAT ---------------------------------------
-PostUp = ip rule add fwmark 0x1/0x1 lookup main pref 100
-PostUp = ip -6 rule add fwmark 0x1/0x1 lookup main pref 100
-PostUp = iptables  -A FORWARD -i %i -j ACCEPT
-PostUp = iptables  -t nat -A POSTROUTING -o eth0 -j MASQUERADE
-PostUp = ip6tables -A FORWARD -i %i -j ACCEPT
-PostUp = ip6tables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+# --- Return-path rule.
+PostUp = while ip rule del fwmark 0x1/0x1 lookup main pref 100 2>/dev/null; do true; done; ip rule add fwmark 0x1/0x1 lookup main pref 100
+PostUp = while ip -6 rule del fwmark 0x1/0x1 lookup main pref 100 2>/dev/null; do true; done; ip -6 rule add fwmark 0x1/0x1 lookup main pref 100
 
-# --- Teardown (|| true so a missing rule never aborts cleanup) ----------------
+# --- Re-pin wg-quick's auto rules to FIXED priorities. wg-quick assigns its
+# suppress_prefixlength + WARP catch-all a start-order-dependent priority that
+# can shadow the carve-outs above; pinning makes routing deterministic. Verify:
+#   ip route get <public-client-ip> mark 0x1   # must show your WAN dev, not wgcf
+#   ip route get 1.1.1.1                        # must show wgcf (WARP default)
+PostUp = while ip rule del table main suppress_prefixlength 0 2>/dev/null; do true; done; ip rule add table main suppress_prefixlength 0 pref 199
+PostUp = while ip rule del not fwmark 0xca6c table 51820 2>/dev/null; do true; done; ip rule add not fwmark 0xca6c table 51820 pref 200
+PostUp = while ip -6 rule del table main suppress_prefixlength 0 2>/dev/null; do true; done; ip -6 rule add table main suppress_prefixlength 0 pref 199
+PostUp = while ip -6 rule del not fwmark 0xca6c table 51820 2>/dev/null; do true; done; ip -6 rule add not fwmark 0xca6c table 51820 pref 200
+PostUp = iptables  -C FORWARD -i %i -j ACCEPT 2>/dev/null || iptables  -A FORWARD -i %i -j ACCEPT
+PostUp = iptables  -t nat -C POSTROUTING -o eth0 -j MASQUERADE 2>/dev/null || iptables  -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+PostUp = ip6tables -C FORWARD -i %i -j ACCEPT 2>/dev/null || ip6tables -A FORWARD -i %i -j ACCEPT
+PostUp = ip6tables -t nat -C POSTROUTING -o eth0 -j MASQUERADE 2>/dev/null || ip6tables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+
+# --- Teardown (|| true so a missing rule never aborts cleanup).
 # If you removed the Tailscale block above, remove its four deletes here too.
-PostDown = ip rule del from all fwmark 0x80000/0xff0000 lookup main pref 80 || true
-PostDown = ip rule del to 100.64.0.0/10 lookup 52 pref 81 || true
-PostDown = ip -6 rule del from all fwmark 0x80000/0xff0000 lookup main pref 80 || true
-PostDown = ip -6 rule del to fd7a:115c:a1e0::/48 lookup 52 pref 81 || true
-PostDown = ip rule del fwmark 0x1/0x1 lookup main pref 100 || true
-PostDown = ip -6 rule del fwmark 0x1/0x1 lookup main pref 100 || true
-PostDown = iptables  -t mangle -D PREROUTING -i eth0 -m conntrack --ctstate NEW -j CONNMARK --set-xmark 0x1/0x1 || true
-PostDown = iptables  -t mangle -D PREROUTING -j CONNMARK --restore-mark --nfmask 0x1 --ctmask 0x1 || true
-PostDown = iptables  -t mangle -D OUTPUT     -j CONNMARK --restore-mark --nfmask 0x1 --ctmask 0x1 || true
-PostDown = iptables  -D FORWARD -i %i -j ACCEPT || true
-PostDown = iptables  -t nat -D POSTROUTING -o eth0 -j MASQUERADE || true
-PostDown = ip6tables -t mangle -D PREROUTING -i eth0 -m conntrack --ctstate NEW -j CONNMARK --set-xmark 0x1/0x1 || true
-PostDown = ip6tables -t mangle -D PREROUTING -j CONNMARK --restore-mark --nfmask 0x1 --ctmask 0x1 || true
-PostDown = ip6tables -t mangle -D OUTPUT     -j CONNMARK --restore-mark --nfmask 0x1 --ctmask 0x1 || true
-PostDown = ip6tables -D FORWARD -i %i -j ACCEPT || true
-PostDown = ip6tables -t nat -D POSTROUTING -o eth0 -j MASQUERADE || true
+PostDown = ip rule del from all fwmark 0x80000/0xff0000 lookup main pref 80 2>/dev/null || true
+PostDown = ip rule del to 100.64.0.0/10 lookup 52 pref 81 2>/dev/null || true
+PostDown = ip -6 rule del from all fwmark 0x80000/0xff0000 lookup main pref 80 2>/dev/null || true
+PostDown = ip -6 rule del to fd7a:115c:a1e0::/48 lookup 52 pref 81 2>/dev/null || true
+PostDown = ip rule del fwmark 0x1/0x1 lookup main pref 100 2>/dev/null || true
+PostDown = ip -6 rule del fwmark 0x1/0x1 lookup main pref 100 2>/dev/null || true
+PostDown = ip rule del table main suppress_prefixlength 0 priority 199 2>/dev/null || true
+PostDown = ip rule del not fwmark 0xca6c table 51820 priority 200 2>/dev/null || true
+PostDown = ip -6 rule del table main suppress_prefixlength 0 priority 199 2>/dev/null || true
+PostDown = ip -6 rule del not fwmark 0xca6c table 51820 priority 200 2>/dev/null || true
+PostDown = iptables  -t mangle -D PREROUTING -i eth0 -m conntrack --ctstate NEW -j CONNMARK --set-xmark 0x1/0x1 2>/dev/null || true
+PostDown = iptables  -t mangle -D PREROUTING -j CONNMARK --restore-mark --nfmask 0x1 --ctmask 0x1 2>/dev/null || true
+PostDown = iptables  -t mangle -D OUTPUT     -j CONNMARK --restore-mark --nfmask 0x1 --ctmask 0x1 2>/dev/null || true
+PostDown = iptables  -D FORWARD -i %i -j ACCEPT 2>/dev/null || true
+PostDown = iptables  -t nat -D POSTROUTING -o eth0 -j MASQUERADE 2>/dev/null || true
+PostDown = ip6tables -t mangle -D PREROUTING -i eth0 -m conntrack --ctstate NEW -j CONNMARK --set-xmark 0x1/0x1 2>/dev/null || true
+PostDown = ip6tables -t mangle -D PREROUTING -j CONNMARK --restore-mark --nfmask 0x1 --ctmask 0x1 2>/dev/null || true
+PostDown = ip6tables -t mangle -D OUTPUT     -j CONNMARK --restore-mark --nfmask 0x1 --ctmask 0x1 2>/dev/null || true
+PostDown = ip6tables -D FORWARD -i %i -j ACCEPT 2>/dev/null || true
+PostDown = ip6tables -t nat -D POSTROUTING -o eth0 -j MASQUERADE 2>/dev/null || true

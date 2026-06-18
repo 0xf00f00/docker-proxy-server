@@ -1,12 +1,17 @@
 # docker-proxy-server
 
-Works best with [docker-proxy-client](https://github.com/0xf00f00/docker-proxy-client). Use the same tags/releases to get compatible versions of server and client.
+A self-hosted proxy server: **naive** (HTTPS/CONNECT) and **VLESS** (Xray, WebSocket + XHTTP) behind Caddy, with automatic TLS via the Cloudflare DNS challenge. Optionally routes all egress through Cloudflare WARP.
 
-## How to setup
+Pair it with [docker-proxy-client](https://github.com/0xf00f00/docker-proxy-client) — use the **same tag** on both for compatible versions.
 
-### Prerequisites
+## Requirements
 
-1. Install [docker](https://docs.docker.com/get-docker/)
+- A Linux server (Ubuntu/Debian recommended).
+- A domain on Cloudflare, plus an API token with **Zone:Read + DNS:Edit** (see the comments in [`.env.example`](.env.example) for exactly how to create it).
+
+## Quick start
+
+**1. Install Docker** (bundles Docker Compose):
 
 ```bash
 apt-get update
@@ -14,133 +19,61 @@ apt-get install -y git curl ca-certificates
 curl -fsSL https://get.docker.com | sh
 ```
 
-2. Install Docker Compose
+**2. Configure** — copy the example env file and fill it in:
 
 ```bash
-sudo apt-get install -y docker-compose
+cp .env.example .env
 ```
 
-### Setup
-
-1. Rename the `.env.example` file to `.env` (or copy: `cp .env.example .env`), and fill the values in the `.env` file.
-2. Run the containers using `docker-compose`
+**3. Start it:**
 
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
-## Cloudflare setup
+That's it. Point [docker-proxy-client](https://github.com/0xf00f00/docker-proxy-client) at your domain and connect.
 
-### Get the teams JWT token from Cloudflare
+---
 
-1. Visit https://<teams id>.cloudflareaccess.com/warp
-2. Authenticate yourself as you would with the official client
-3. Check the source code of the page for the JWT token or use the following code in the "Web Console" (Ctrl+Shift+K):
-```javascript
-console.log(document.querySelector("meta[http-equiv='refresh']").content.split("=")[2])
-```
-4. Copy the JWT token and use it in the next step as the `-T` argument.
+## Optional: egress through Cloudflare WARP
 
-### Generate the WireGuard configuration
+Route outbound traffic through Cloudflare WARP so your server's real IP is never exposed to the destinations you proxy to.
+
+**1. Generate a WireGuard config** with the bundled script (add `-T <teams-JWT>` if you use a Zero Trust / Teams account):
+
 ```bash
-git clone https://github.com/rany2/warp.sh
-cd warp.sh
-./warp.sh -T eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9... #teams JWT token (default no JWT token is sent)
+./system/cloudflare-warp/warp.sh
 ```
 
-### Add the WireGuard configuration to the server
+> To get a Teams JWT: open `https://<teams-id>.cloudflareaccess.com/warp`, authenticate, then read it from the page console:
+> `document.querySelector("meta[http-equiv='refresh']").content.split("=")[2]`
 
-Pick one model:
+**2. Install it** to `/etc/wireguard/wgcf.conf`, **delete the `DNS =` line**, then paste the hooks for the model you want into the `[Interface]` section. Pick one:
 
-- **Split-tunnel** *(recommended)* — only user traffic goes through WARP; the host stays on its WAN. Simpler, low lockout risk. Use this unless you have a reason not to.
-- **Full-tunnel** — the whole box (including its own traffic) exits via WARP. Choose only if you also want the host's own outbound cloaked.
+- **Split-tunnel** *(recommended)* — only proxied traffic goes through WARP; the host keeps its normal WAN. → [`split-tunnel.example`](system/wireguard-routes/wgcf.conf.hooks.split-tunnel.example)
+- **Full-tunnel** — the entire box exits via WARP. → [`full-tunnel.example`](system/wireguard-routes/wgcf.conf.hooks.full-tunnel.example)
 
-**Steps:**
+Each example file documents every line, including the Tailscale carve-outs if this host is also a Tailscale exit node.
 
-1. Copy the generated config to `/etc/wireguard/wgcf.conf` and delete its `DNS =` line.
-2. Paste the hooks for your model (below) into the `[Interface]` section.
-3. Bring it up: `sudo systemctl enable --now wg-quick@wgcf`
-   - To auto revert in 90s if you lock yourself out, run `sudo systemd-run --on-active=90 systemctl stop wg-quick@wgcf` beforehand.
+**3. Bring it up:**
 
-Verify from a **client/container**: `curl https://www.cloudflare.com/cdn-cgi/trace` shows `warp=on`.
+```bash
+# Optional safety net: auto-revert in 90s if you lock yourself out.
+sudo systemd-run --on-active=90 systemctl stop wg-quick@wgcf
 
-> Use **inline** hooks (not a `PostUp = /path/script.sh`). Ubuntu's AppArmor profile for wg-quick blocks executing external scripts but allows `ip`/`iptables`/`sysctl`.
-
-#### Option A — Split-tunnel (recommended)
-
-`Table = off` keeps the WAN as default route; the rules below send only user subnets through WARP. `172.16.0.0/12` covers all Docker networks; optionally uncomment the `10.x.x.0/24` line and set to your own subnet (e.g., WireGuard). Full file: [`wgcf.conf.hooks.split-tunnel.example`](system/wireguard-routes/wgcf.conf.hooks.split-tunnel.example).
-
-```ini
-Table = off
-PostUp = ip route add default dev %i table 51820
-PostUp = ip -6 route add default dev %i table 51820
-PostUp = ip rule add from 172.16.0.0/12 table 51820 pref 100
-# PostUp = ip rule add from 10.13.13.0/24 table 51820 pref 102
-PostUp = iptables  -t nat -A POSTROUTING -o %i -j MASQUERADE
-PostUp = ip6tables -t nat -A POSTROUTING -o %i -j MASQUERADE
-PostDown = iptables  -t nat -D POSTROUTING -o %i -j MASQUERADE || true
-PostDown = ip6tables -t nat -D POSTROUTING -o %i -j MASQUERADE || true
-PostDown = ip rule del from 172.16.0.0/12 table 51820 pref 100 || true
-# PostDown = ip rule del from 10.13.13.0/24 table 51820 pref 102 || true
-PostDown = ip route flush table 51820 || true
-PostDown = ip -6 route flush table 51820 || true
+sudo systemctl enable --now wg-quick@wgcf
 ```
 
-> If you serve IPv6 to clients, add matching `ip -6 rule add from <prefix>` lines for your v6 subnets, or clients leak via the server's real IPv6. If not, disable IPv6 on the host.
+**4. Verify** from a client or container — it should show `warp=on`:
 
-#### Option B — Full-tunnel
-
-`AllowedIPs = 0.0.0.0/0, ::/0` makes WARP the default route; the hooks mark inbound replies back out the WAN so proxy clients aren't dropped. **Replace every `eth0` with your WAN interface** (`ip route show default`). Also ensure `rp_filter` is `2` (`sysctl net.ipv4.conf.all.rp_filter`; if `1`, set `net.ipv4.conf.<wan>.rp_filter=2` in `/etc/sysctl.d/`). Full file: [`wgcf.conf.hooks.full-tunnel.example`](system/wireguard-routes/wgcf.conf.hooks.full-tunnel.example).
-
-```ini
-PreUp = iptables  -t mangle -A PREROUTING -i eth0 -m conntrack --ctstate NEW -j CONNMARK --set-xmark 0x1/0x1
-PreUp = iptables  -t mangle -A PREROUTING -j CONNMARK --restore-mark --nfmask 0x1 --ctmask 0x1
-PreUp = iptables  -t mangle -A OUTPUT     -j CONNMARK --restore-mark --nfmask 0x1 --ctmask 0x1
-PreUp = ip6tables -t mangle -A PREROUTING -i eth0 -m conntrack --ctstate NEW -j CONNMARK --set-xmark 0x1/0x1
-PreUp = ip6tables -t mangle -A PREROUTING -j CONNMARK --restore-mark --nfmask 0x1 --ctmask 0x1
-PreUp = ip6tables -t mangle -A OUTPUT     -j CONNMARK --restore-mark --nfmask 0x1 --ctmask 0x1
-PostUp = ip rule add fwmark 0x1/0x1 lookup main pref 100
-PostUp = ip -6 rule add fwmark 0x1/0x1 lookup main pref 100
-PostUp = iptables  -A FORWARD -i %i -j ACCEPT
-PostUp = iptables  -t nat -A POSTROUTING -o eth0 -j MASQUERADE
-PostUp = ip6tables -A FORWARD -i %i -j ACCEPT
-PostUp = ip6tables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
-PostDown = ip rule del fwmark 0x1/0x1 lookup main pref 100 || true
-PostDown = ip -6 rule del fwmark 0x1/0x1 lookup main pref 100 || true
-PostDown = iptables  -t mangle -D PREROUTING -i eth0 -m conntrack --ctstate NEW -j CONNMARK --set-xmark 0x1/0x1 || true
-PostDown = iptables  -t mangle -D PREROUTING -j CONNMARK --restore-mark --nfmask 0x1 --ctmask 0x1 || true
-PostDown = iptables  -t mangle -D OUTPUT     -j CONNMARK --restore-mark --nfmask 0x1 --ctmask 0x1 || true
-PostDown = iptables  -D FORWARD -i %i -j ACCEPT || true
-PostDown = iptables  -t nat -D POSTROUTING -o eth0 -j MASQUERADE || true
-PostDown = ip6tables -t mangle -D PREROUTING -i eth0 -m conntrack --ctstate NEW -j CONNMARK --set-xmark 0x1/0x1 || true
-PostDown = ip6tables -t mangle -D PREROUTING -j CONNMARK --restore-mark --nfmask 0x1 --ctmask 0x1 || true
-PostDown = ip6tables -t mangle -D OUTPUT     -j CONNMARK --restore-mark --nfmask 0x1 --ctmask 0x1 || true
-PostDown = ip6tables -D FORWARD -i %i -j ACCEPT || true
-PostDown = ip6tables -t nat -D POSTROUTING -o eth0 -j MASQUERADE || true
+```bash
+curl https://www.cloudflare.com/cdn-cgi/trace
 ```
 
-#### If the server also runs Tailscale
+> Use the **inline** hooks from the example files, not a `PostUp = /path/script.sh`. Ubuntu's AppArmor profile for wg-quick blocks external scripts but allows `ip`/`iptables`/`sysctl`. The hooks are written to be idempotent so cycling the link never stacks duplicate rules.
 
-Skip if you don't run Tailscale. The two models need opposite handling:
+## Optional: WireGuard VPN server
 
-**Split-tunnel** — opt exit-node traffic *into* WARP. Add to Option A:
+Terminate remote clients (e.g. a MikroTik router) on a separate `wg0` interface and force all their traffic out through the host's WARP tunnel, with a kill-switch so nothing leaks to the raw WAN.
 
-```ini
-PostUp = ip rule add iif tailscale0 table 51820 pref 101
-PostUp = ip -6 rule add iif tailscale0 table 51820 pref 101
-PostDown = ip rule del iif tailscale0 table 51820 pref 101 || true
-PostDown = ip -6 rule del iif tailscale0 table 51820 pref 101 || true
-```
-
-**Full-tunnel** — full-tunnel WARP otherwise swallows tailnet traffic + MagicDNS (and your SSH if it's over Tailscale). Carve it back *out* by adding to Option B (values are Tailscale's Linux defaults; confirm table `52` via `ip rule show`):
-
-```ini
-PostUp = ip rule add from all fwmark 0x80000/0xff0000 lookup main pref 80
-PostUp = ip rule add to 100.64.0.0/10 lookup 52 pref 81
-PostUp = ip -6 rule add from all fwmark 0x80000/0xff0000 lookup main pref 80
-PostUp = ip -6 rule add to fd7a:115c:a1e0::/48 lookup 52 pref 81
-PostDown = ip rule del from all fwmark 0x80000/0xff0000 lookup main pref 80 || true
-PostDown = ip rule del to 100.64.0.0/10 lookup 52 pref 81 || true
-PostDown = ip -6 rule del from all fwmark 0x80000/0xff0000 lookup main pref 80 || true
-PostDown = ip -6 rule del to fd7a:115c:a1e0::/48 lookup 52 pref 81 || true
-```
+See [`wg0.conf.example`](system/wireguard-server/wg0.conf.example) — it documents the keys, ports, routing, and the MikroTik client setup end to end.

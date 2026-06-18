@@ -1,0 +1,66 @@
+# WireGuard VPN *server* (wg0) — terminates remote clients (e.g. a MikroTik) and
+# forces all their traffic out through the host's full-tunnel WARP (wgcf), with a
+# kill-switch so nothing leaks to the raw WAN. Separate interface from wgcf.
+#
+# Install as /etc/wireguard/wg0.conf (chmod 600), then:
+#   sudo systemctl enable --now wg-quick@wg0     # check with: wg show wg0
+#
+# Replace the placeholders:
+#   <WARP_IFACE>      the WARP client interface (e.g. wgcf)
+#   <PORT>            a HIGH UDP port (>1024) opened at the edge firewall. Do NOT
+#                     use a port <1024: AppArmor runs wg-quick's `ip` without
+#                     CAP_NET_BIND_SERVICE, so link-up fails on privileged ports.
+#   <SERVER_PRIVKEY>  from `wg genkey`;  <CLIENT_PUBKEY>  the client's public key
+#   10.20.0.0/24      VPN subnet (must not collide with WARP/Docker/Tailscale/LAN)
+#
+# All hooks are idempotent + `set -e` safe (dedup before add) so re-running the
+# link never stacks duplicate rules.
+
+[Interface]
+Address = 10.20.0.1/24
+ListenPort = <PORT>
+PrivateKey = <SERVER_PRIVKEY>
+# Match the WARP MTU; clients are double-encapsulated (wg0 -> WARP).
+MTU = 1280
+# Tag wg0's own transport so the rule below routes it out the WAN, not into WARP
+# (the default route). Without this the handshake replies take WARP's source and
+# the client never completes a handshake.
+FwMark = 0x20000
+
+# Keep wg0's transport off WARP. This rule MUST sit above wg-quick's WARP
+# catch-all (~pref 89); pref 85 = below Tailscale, above wg-quick's auto rules.
+# Verify: `ip route get <peer-endpoint-ip> mark 0x20000` shows your WAN dev.
+PostUp   = while ip rule del from all fwmark 0x20000/0x20000 lookup main pref 85 2>/dev/null; do true; done; ip rule add from all fwmark 0x20000/0x20000 lookup main pref 85
+PostDown = while ip rule del from all fwmark 0x20000/0x20000 lookup main pref 85 2>/dev/null; do true; done
+
+# Forward + kill-switch: client traffic may leave ONLY via WARP. If WARP is down
+# the DROP rule blocks it instead of leaking to the raw WAN.
+PostUp   = iptables -C FORWARD -i %i -o <WARP_IFACE> -j ACCEPT 2>/dev/null || iptables -A FORWARD -i %i -o <WARP_IFACE> -j ACCEPT
+PostUp   = iptables -C FORWARD -i %i ! -o <WARP_IFACE> -j DROP 2>/dev/null || iptables -A FORWARD -i %i ! -o <WARP_IFACE> -j DROP
+# MSS clamp both directions to avoid PMTU blackholes through the double tunnel.
+PostUp   = iptables -C FORWARD -i %i -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null || iptables -A FORWARD -i %i -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
+PostUp   = iptables -C FORWARD -o %i -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null || iptables -A FORWARD -o %i -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
+# NAT the VPN subnet onto the WARP interface.
+PostUp   = iptables -t nat -C POSTROUTING -s 10.20.0.0/24 -o <WARP_IFACE> -j MASQUERADE 2>/dev/null || iptables -t nat -A POSTROUTING -s 10.20.0.0/24 -o <WARP_IFACE> -j MASQUERADE
+
+# OPTIONAL — only if this host is ALSO a Tailscale exit node: a tunnel-in-tunnel
+# loop can crawl the exit node. FIX ON THE CLIENT: give its WG interface a /32
+# (not a /24) so its LAN has no route to 10.20.0.1. Only if you can't fix the
+# client (policy-routed clients), drop Tailscale's UDP on wg0 in the RAW table
+# (replace 41641 with this host's tailscale port):
+#   PostUp   = iptables -t raw -C PREROUTING -i %i -p udp --dport 41641 -j DROP 2>/dev/null || iptables -t raw -A PREROUTING -i %i -p udp --dport 41641 -j DROP
+#   PostUp   = iptables -t raw -C OUTPUT -o %i -p udp --sport 41641 -j DROP 2>/dev/null || iptables -t raw -A OUTPUT -o %i -p udp --sport 41641 -j DROP
+#   PostDown = iptables -t raw -D PREROUTING -i %i -p udp --dport 41641 -j DROP 2>/dev/null || true
+#   PostDown = iptables -t raw -D OUTPUT -o %i -p udp --sport 41641 -j DROP 2>/dev/null || true
+
+PostDown = iptables -D FORWARD -i %i -o <WARP_IFACE> -j ACCEPT 2>/dev/null || true
+PostDown = iptables -D FORWARD -i %i ! -o <WARP_IFACE> -j DROP 2>/dev/null || true
+PostDown = iptables -D FORWARD -i %i -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null || true
+PostDown = iptables -D FORWARD -o %i -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null || true
+PostDown = iptables -t nat -D POSTROUTING -s 10.20.0.0/24 -o <WARP_IFACE> -j MASQUERADE 2>/dev/null || true
+
+[Peer]
+# Remote client. It src-NATs its devices onto its own tunnel IP, so /32 is enough.
+PublicKey = <CLIENT_PUBKEY>
+AllowedIPs = 10.20.0.2/32
+PersistentKeepalive = 25
