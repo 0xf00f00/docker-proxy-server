@@ -62,9 +62,7 @@
 			}
 		}
 		
-		# camouflage site
-		reverse_proxy mozilla_mdn:5000 {
-			trusted_proxies private_ranges
-		}
+		# camouflage site (static)
+		reverse_proxy decoy:8080
 	}
 }

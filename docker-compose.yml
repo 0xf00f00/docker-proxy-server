@@ -18,7 +18,7 @@ services:
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
     depends_on:
-      - mozilla_mdn
+      - decoy
       - naive
       - xray
 
@@ -46,7 +46,7 @@ services:
       - ./xray/entrypoint.sh:/entrypoint.sh:ro
     entrypoint: ["/bin/sh", "/entrypoint.sh"]
 
-  mozilla_mdn:
-    image: ghcr.io/0xf00f00/mdn:latest
-    container_name: mozilla_mdn
+  decoy:
+    image: ghcr.io/alam00000/bentopdf-simple:latest
+    container_name: decoy
     restart: unless-stopped
