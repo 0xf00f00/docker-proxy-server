@@ -16,6 +16,8 @@ services:
       - PROXY_REJECT_DOMAINS=${HTTPS_PROXY_REJECT_DOMAINS}
       - XRAY_PATH=${XRAY_PATH}
     volumes:
+      - caddy_data:/data
+      - caddy_config:/config
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
     depends_on:
       - decoy
@@ -50,3 +52,7 @@ services:
     image: ghcr.io/alam00000/bentopdf-simple:latest
     container_name: decoy
     restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:
