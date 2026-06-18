@@ -1,15 +1,19 @@
 {
+	email {$CERTIFICATE_EMAIL}
+	acme_dns cloudflare {env.CLOUDFLARE_API_TOKEN}
 	order forward_proxy before reverse_proxy
 }
-(common) {
-        header * {
-                -Server
-        }
-}
-:443, {$DOMAINS} {
-	tls {$CERTIFICATE_EMAIL}
 
-	# Route CONNECT requests with "Tunnel-Mode: udp" header to singbox-naive.
+(common) {
+	header * {
+		-Server
+	}
+}
+
+:443, {$WEB_DOMAINS} {
+	import common
+
+	# naive: CONNECT requests that carry UDP (QUIC/HTTP-3) tunnels.
 	@naive {
 		method CONNECT
 		header Tunnel-Mode udp
@@ -20,6 +24,30 @@
 		}
 	}
 
+	# xray VLESS / WebSocket
+	@xray_ws {
+		path {$XRAY_PATH} {$XRAY_PATH}/*
+		header Connection *pgrade*
+		header Upgrade    *ebsocket*
+	}
+	handle @xray_ws {
+		reverse_proxy xray:2080 {
+			header_up Host {host}
+		}
+	}
+
+	# xray VLESS / XHTTP
+	@xray_xhttp {
+		path {$XRAY_PATH} {$XRAY_PATH}/*
+	}
+	handle @xray_xhttp {
+		reverse_proxy xray:2081 {
+			header_up Host {host}
+			flush_interval -1
+		}
+	}
+
+	# Everything else
 	handle {
 		forward_proxy {
 			basic_auth {$PROXY_USER} {$PROXY_PASSWORD}
@@ -33,7 +61,8 @@
 				allow all
 			}
 		}
-
+		
+		# camouflage site
 		reverse_proxy mozilla_mdn:5000 {
 			trusted_proxies private_ranges
 		}

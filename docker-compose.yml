@@ -1,42 +1,26 @@
 services:
-  haproxy-config:
-    image: alpine:latest
-    container_name: haproxy-config
-    restart: "no"
-    entrypoint: [ "/bin/sh", "-c", "/root/haproxy/update_config.sh" ]
-    volumes:
-      - ./haproxy:/root/haproxy:ro
-      - haproxy_data:/root/haproxy_data
-    environment:
-      - WEB_DOMAINS=${WEB_DOMAINS}
-  haproxy:
-    image: haproxy:latest
-    container_name: haproxy
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - haproxy_data:/usr/local/etc/haproxy:ro
-    depends_on:
-      - haproxy-config
-      - caddy
   caddy:
     image: ghcr.io/0xf00f00/caddy-proxy:latest
     container_name: caddy
     restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
     environment:
       - CERTIFICATE_EMAIL=${CERTIFICATE_EMAIL}
-      - DOMAINS=${WEB_DOMAINS}
+      - WEB_DOMAINS=${WEB_DOMAINS}
+      - CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN}
       - PROXY_USER=${HTTPS_PROXY_USER}
       - PROXY_PASSWORD=${HTTPS_PROXY_PASSWORD}
       - PROXY_REJECT_IPS=${HTTPS_PROXY_REJECT_IPS}
       - PROXY_REJECT_DOMAINS=${HTTPS_PROXY_REJECT_DOMAINS}
+      - XRAY_PATH=${XRAY_PATH}
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
     depends_on:
       - mozilla_mdn
       - naive
+      - xray
 
   # Sing-box naive INBOUND
   naive:
@@ -50,10 +34,19 @@ services:
       - ./naive/entrypoint.sh:/entrypoint.sh:ro
     entrypoint: ["/bin/sh", "/entrypoint.sh"]
 
+  # Xray INBOUND (VLESS over ws + xhttp)
+  xray:
+    image: teddysun/xray:latest
+    container_name: xray
+    restart: unless-stopped
+    environment:
+      - XRAY_UUID=${XRAY_UUID}
+      - XRAY_PATH=${XRAY_PATH}
+    volumes:
+      - ./xray/entrypoint.sh:/entrypoint.sh:ro
+    entrypoint: ["/bin/sh", "/entrypoint.sh"]
+
   mozilla_mdn:
     image: ghcr.io/0xf00f00/mdn:latest
     container_name: mozilla_mdn
     restart: unless-stopped
-
-volumes:
-  haproxy_data:
