@@ -19,6 +19,10 @@ mkdir -p /tmp/xray
 cat > /tmp/xray/config.json <<EOF
 {
   "log": { "loglevel": "warning" },
+  "dns": {
+    "servers": [ "1.1.1.1", "8.8.8.8" ],
+    "queryStrategy": "UseIPv4"
+  },
   "inbounds": [
     {
       "tag": "ws-in",
@@ -32,7 +36,8 @@ cat > /tmp/xray/config.json <<EOF
       "streamSettings": {
         "network": "ws",
         "security": "none",
-        "wsSettings": { "path": "$XRAY_PATH" }
+        "wsSettings": { "path": "$XRAY_PATH" },
+        "sockopt": { "trustedXForwardedFor": [ "X-Forwarded-For" ] }
       }
     },
     {
@@ -47,14 +52,46 @@ cat > /tmp/xray/config.json <<EOF
       "streamSettings": {
         "network": "xhttp",
         "security": "none",
-        "xhttpSettings": { "path": "$XRAY_PATH", "mode": "auto" }
+        "xhttpSettings": { "path": "$XRAY_PATH", "mode": "auto" },
+        "sockopt": { "trustedXForwardedFor": [ "X-Forwarded-For" ] }
       }
     }
   ],
   "outbounds": [
-    { "protocol": "freedom", "tag": "direct" },
+    { "protocol": "freedom", "tag": "direct", "settings": { "domainStrategy": "UseIPv4" } },
     { "protocol": "blackhole", "tag": "blocked" }
-  ]
+  ],
+  "routing": {
+    "domainStrategy": "IPIfNonMatch",
+    "rules": [
+      {
+        "type": "field",
+        "outboundTag": "blocked",
+        "domain": [ "domain:ir", "geosite:category-ir" ]
+      },
+      {
+        "type": "field",
+        "outboundTag": "blocked",
+        "ip": [ "geoip:ir" ]
+      },
+      {
+        "type": "field",
+        "outboundTag": "blocked",
+        "ip": [
+          "0.0.0.0/8",
+          "10.0.0.0/8",
+          "100.64.0.0/10",
+          "127.0.0.0/8",
+          "169.254.0.0/16",
+          "172.16.0.0/12",
+          "192.168.0.0/16",
+          "::1/128",
+          "fc00::/7",
+          "fe80::/10"
+        ]
+      }
+    ]
+  }
 }
 EOF
 

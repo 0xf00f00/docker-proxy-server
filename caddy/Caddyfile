@@ -25,6 +25,10 @@
 	}
 
 	# xray VLESS / WebSocket
+	#
+	# xray trusts X-Forwarded-For (see xray/entrypoint.sh). Caddy already
+	# discards any client-supplied XFF by default and sets it to the real
+	# client IP, so the value xray records can't be spoofed.
 	@xray_ws {
 		path {$XRAY_PATH} {$XRAY_PATH}/*
 		header Connection *pgrade*
@@ -56,7 +60,11 @@
 			probe_resistance
 
 			acl {
-				deny 10.0.0.0/8 127.0.0.0/8 172.16.0.0/12 192.168.0.0/16 ::1/128 fe80::/10
+				# Block pivots into private infra: RFC1918, loopback, CGNAT/
+				# Tailscale (100.64.0.0/10), link-local + cloud metadata
+				# (169.254.0.0/16), and IPv6 ULA/Tailscale (fc00::/7) +
+				# link-local (fe80::/10).
+				deny 0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 127.0.0.0/8 169.254.0.0/16 172.16.0.0/12 192.168.0.0/16 ::1/128 fc00::/7 fe80::/10
 				deny {$PROXY_REJECT_DOMAINS}
 				allow all
 			}
