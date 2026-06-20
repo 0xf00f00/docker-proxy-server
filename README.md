@@ -1,6 +1,6 @@
 # docker-proxy-server
 
-A self-hosted proxy server: **naive** (HTTPS/CONNECT) and **VLESS** (Xray, WebSocket + XHTTP) behind Caddy, with automatic TLS via the Cloudflare DNS challenge. Optionally routes all egress through Cloudflare WARP.
+A self-hosted proxy server: **naive** (HTTPS/CONNECT) and **VLESS** (Xray, WebSocket + XHTTP) behind Caddy, with automatic TLS via the Cloudflare DNS challenge.
 
 Pair it with [docker-proxy-client](https://github.com/0xf00f00/docker-proxy-client) — use the **same tag** on both for compatible versions.
 
@@ -35,9 +35,23 @@ That's it. Point [docker-proxy-client](https://github.com/0xf00f00/docker-proxy-
 
 ---
 
-## Optional: egress through Cloudflare WARP
+## Egress through Cloudflare WARP
 
-Route outbound traffic through Cloudflare WARP so your server's real IP is never exposed to the destinations you proxy to.
+By default **naive** and **xray** egress through Cloudflare WARP.
+
+**Disable it** (egress directly) by setting in `.env`:
+
+```bash
+WARP_EGRESS=false
+```
+
+**Verify** — proxied traffic should exit via WARP. From a client connected through naive or xray, load `https://www.cloudflare.com/cdn-cgi/trace`; it should report `warp=on` and a Cloudflare IP, not your server's.
+
+> If WARP is requested but the profile is missing, naive/xray **refuse to start** rather than silently leaking your real IP — check the `warp-reg` and container logs.
+
+## Alternative: host-level WARP (wgcf)
+
+Instead of the per-service container WARP, route the whole host through a host-level WARP tunnel.
 
 **1. Generate a WireGuard config** with the bundled script (add `-T <teams-JWT>` if you use a Zero Trust / Teams account):
 

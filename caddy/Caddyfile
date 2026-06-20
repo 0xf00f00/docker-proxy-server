@@ -13,10 +13,10 @@
 :443, {$WEB_DOMAINS} {
 	import common
 
-	# naive: CONNECT requests that carry UDP (QUIC/HTTP-3) tunnels.
+	# Authenticated CONNECT -> sing-box naive. 
 	@naive {
 		method CONNECT
-		header Tunnel-Mode udp
+		header Proxy-Authorization "Basic {env.PROXY_AUTH_B64}"
 	}
 	handle @naive {
 		reverse_proxy h2c://naive:1080 {
@@ -53,23 +53,19 @@
 
 	# Everything else
 	handle {
-		forward_proxy {
-			basic_auth {$PROXY_USER} {$PROXY_PASSWORD}
-			hide_ip
-			hide_via
-			probe_resistance
+		# Optional: Caddy's own forward_proxy as an alternative generic HTTPS proxy.
+		# forward_proxy {
+		# 	basic_auth {$PROXY_USER} {$PROXY_PASSWORD}
+		# 	hide_ip
+		# 	hide_via
+		# 	probe_resistance
+		# 	acl {
+		# 		deny 0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 127.0.0.0/8 169.254.0.0/16 172.16.0.0/12 192.168.0.0/16 ::1/128 fc00::/7 fe80::/10
+		# 		deny {$PROXY_REJECT_DOMAINS}
+		# 		allow all
+		# 	}
+		# }
 
-			acl {
-				# Block pivots into private infra: RFC1918, loopback, CGNAT/
-				# Tailscale (100.64.0.0/10), link-local + cloud metadata
-				# (169.254.0.0/16), and IPv6 ULA/Tailscale (fc00::/7) +
-				# link-local (fe80::/10).
-				deny 0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 127.0.0.0/8 169.254.0.0/16 172.16.0.0/12 192.168.0.0/16 ::1/128 fc00::/7 fe80::/10
-				deny {$PROXY_REJECT_DOMAINS}
-				allow all
-			}
-		}
-		
 		# camouflage site (static)
 		reverse_proxy decoy:8080
 	}

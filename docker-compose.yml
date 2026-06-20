@@ -15,10 +15,12 @@ services:
       - PROXY_REJECT_IPS=${HTTPS_PROXY_REJECT_IPS}
       - PROXY_REJECT_DOMAINS=${HTTPS_PROXY_REJECT_DOMAINS}
       - XRAY_PATH=${XRAY_PATH}
+    entrypoint: ["/bin/sh", "/caddy-entrypoint.sh"]
     volumes:
       - caddy_data:/data
       - caddy_config:/config
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy/entrypoint.sh:/caddy-entrypoint.sh:ro
     depends_on:
       - decoy
       - naive
@@ -32,9 +34,15 @@ services:
     environment:
       - PROXY_USER=${HTTPS_PROXY_USER}
       - PROXY_PASSWORD=${HTTPS_PROXY_PASSWORD}
+      - WARP_EGRESS=${WARP_EGRESS:-true}
     volumes:
       - ./naive/entrypoint.sh:/entrypoint.sh:ro
+      - ./warp/lib.sh:/wg-lib.sh:ro
+      - warp_profile:/warp:ro
     entrypoint: ["/bin/sh", "/entrypoint.sh"]
+    depends_on:
+      warp-reg:
+        condition: service_completed_successfully
 
   # Xray INBOUND (VLESS over ws + xhttp)
   xray:
@@ -44,15 +52,36 @@ services:
     environment:
       - XRAY_UUID=${XRAY_UUID}
       - XRAY_PATH=${XRAY_PATH}
+      - WARP_EGRESS=${WARP_EGRESS:-true}
     volumes:
       - ./xray/entrypoint.sh:/entrypoint.sh:ro
+      - ./warp/lib.sh:/wg-lib.sh:ro
+      - warp_profile:/warp:ro
     entrypoint: ["/bin/sh", "/entrypoint.sh"]
+    depends_on:
+      warp-reg:
+        condition: service_completed_successfully
 
   decoy:
     image: ghcr.io/alam00000/bentopdf-simple:latest
     container_name: decoy
     restart: unless-stopped
 
+  # One-shot wgcf registration -> writes wgcf-profile.conf to the shared volume
+  warp-reg:
+    image: virb3/wgcf:latest
+    container_name: warp-reg
+    restart: "no"
+    environment:
+      - WARP_EGRESS=${WARP_EGRESS:-true}
+      - WARP_LICENSE_KEY=${WARP_LICENSE_KEY:-}
+    volumes:
+      - warp_profile:/profile
+      - ./warp/lib.sh:/wg-lib.sh:ro
+      - ./warp/register.sh:/entrypoint.sh:ro
+    entrypoint: ["/bin/sh", "/entrypoint.sh"]
+
 volumes:
   caddy_data:
   caddy_config:
+  warp_profile:

@@ -1,11 +1,43 @@
 #!/bin/sh
-# Renders a sing-box config at runtime (PROXY_USER/PROXY_PASSWORD from .env)
-# and runs sing-box as the naive INBOUND (server side).
-#
-# Listens on :1080 plain HTTP/2 (h2c). Caddy in front terminates TLS and
-# reverse_proxies CONNECT requests with `Tunnel-Mode: udp` to this service.
-# Pairs with the matching client-side `naive` container in docker-proxy-client.
+# Renders the sing-box config
 set -e
+
+LOG_TAG=naive
+# shellcheck source=warp/lib.sh
+. /wg-lib.sh
+
+ENDPOINTS_JSON=""
+ROUTE_FINAL=""
+if warp_on; then
+  load_warp_profile
+
+  ENDPOINTS_JSON=$(cat <<JSON
+  "endpoints": [
+    {
+      "type": "wireguard",
+      "tag": "warp-ep",
+      "system": false,
+      "mtu": 1280,
+      "address": [ $WG_ADDRS ],
+      "private_key": "$WG_KEY",
+      "peers": [
+        {
+          "address": "$WG_HOST",
+          "port": $WG_PORT,
+          "public_key": "$WG_PEER",
+          "allowed_ips": [ "0.0.0.0/0", "::/0" ],
+          "persistent_keepalive_interval": 25
+        }
+      ]
+    }
+  ],
+JSON
+)
+  ROUTE_FINAL='"final": "warp-ep",'
+  echo "[naive] WARP egress ON -> WireGuard endpoint via $WG_HOST:$WG_PORT"
+else
+  echo "[naive] WARP egress OFF -> direct"
+fi
 
 mkdir -p /tmp/sing-box
 cat > /tmp/sing-box/config.json <<EOF
@@ -15,6 +47,7 @@ cat > /tmp/sing-box/config.json <<EOF
     "servers": [{ "tag": "local", "type": "local" }],
     "strategy": "ipv4_only"
   },
+$ENDPOINTS_JSON
   "inbounds": [
     {
       "type": "naive",
@@ -31,12 +64,14 @@ cat > /tmp/sing-box/config.json <<EOF
     { "type": "direct", "tag": "direct" }
   ],
   "route": {
+    $ROUTE_FINAL
     "rule_set": [
       {
         "type": "remote",
         "tag": "geosite-ir",
         "format": "binary",
         "url": "https://raw.githubusercontent.com/Chocolate4U/Iran-sing-box-rules/rule-set/geosite-ir.srs",
+        "download_detour": "direct",
         "update_interval": "24h"
       },
       {
@@ -44,6 +79,7 @@ cat > /tmp/sing-box/config.json <<EOF
         "tag": "geoip-ir",
         "format": "binary",
         "url": "https://raw.githubusercontent.com/Chocolate4U/Iran-sing-box-rules/rule-set/geoip-ir.srs",
+        "download_detour": "direct",
         "update_interval": "24h"
       }
     ],
