@@ -53,8 +53,6 @@ PrivateKey = $2
 Address = $3
 MTU = 1280
 Table = off
-PostUp = ip -6 route add default dev %i metric \$((2048 + \$(echo %i | tr -dc 0-9))) || true
-PostDown = ip -6 route flush default dev %i 2>/dev/null || true
 [Peer]
 PublicKey = $4
 AllowedIPs = 0.0.0.0/0, ::/0
@@ -74,7 +72,7 @@ while [ "$n" -le "$N" ]; do
   ep=$(ep_for "$n" $EPS)
 
   if [ -f "$conf" ] && grep -q '^PrivateKey' "$conf"; then
-    # Reuse the account but re-render so template changes (endpoint, PostUp) apply.
+    # Reuse the account but re-render so template changes (endpoint) apply.
     pk=$(wg_field "$conf" PrivateKey)
     addr=$(wg_field "$conf" Address)
     pub=$(wg_field "$conf" PublicKey)
