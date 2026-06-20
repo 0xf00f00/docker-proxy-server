@@ -22,7 +22,7 @@ cat > /tmp/sing-box/config.json <<EOF
   "log": { "level": "warn" },
   "dns": {
     "servers": [{ "tag": "local", "type": "local" }],
-    "strategy": "prefer_ipv4"
+    "strategy": "ipv4_only"
   },
   "inbounds": [
     {
@@ -63,7 +63,7 @@ cat > /tmp/sing-box/config.json <<EOF
     "rules": [
       { "domain_suffix": [".ir"], "action": "reject" },
       { "rule_set": "geosite-ir", "action": "reject" },
-      { "action": "resolve", "strategy": "prefer_ipv4" },
+      { "action": "resolve", "strategy": "ipv4_only" },
       { "rule_set": "geoip-ir", "action": "reject" },
       {
         "ip_cidr": [

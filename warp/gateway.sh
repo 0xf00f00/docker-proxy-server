@@ -19,7 +19,7 @@ OUT=""
 n=1
 while [ "$n" -le "$N" ]; do
   OUT="$OUT
-    { \"tag\": \"warp$n\", \"protocol\": \"freedom\", \"settings\": { \"domainStrategy\": \"UseIP\" }, \"streamSettings\": { \"sockopt\": { \"interface\": \"warp$n\" } } },"
+    { \"tag\": \"warp$n\", \"protocol\": \"freedom\", \"settings\": { \"domainStrategy\": \"UseIPv4\" }, \"streamSettings\": { \"sockopt\": { \"interface\": \"warp$n\" } } },"
   n=$((n + 1))
 done
 OUT="${OUT%,}"

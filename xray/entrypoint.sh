@@ -21,7 +21,7 @@ cat > /tmp/xray/config.json <<EOF
   "log": { "loglevel": "warning" },
   "dns": {
     "servers": [ "1.1.1.1", "8.8.8.8" ],
-    "queryStrategy": "UseIP"
+    "queryStrategy": "UseIPv4"
   },
   "inbounds": [
     {
@@ -59,7 +59,7 @@ cat > /tmp/xray/config.json <<EOF
   ],
   "outbounds": [
     $WARP_OUTBOUND
-    { "protocol": "freedom", "tag": "direct", "settings": { "domainStrategy": "UseIP" } },
+    { "protocol": "freedom", "tag": "direct", "settings": { "domainStrategy": "UseIPv4" } },
     { "protocol": "blackhole", "tag": "blocked" }
   ],
   "routing": {
