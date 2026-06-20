@@ -26,7 +26,7 @@ services:
       - naive
       - xray
 
-  # Sing-box naive INBOUND
+  # Sing-box naive INBOUND. Egress -> warp-lb SOCKS (load-balanced kernel WARP).
   naive:
     image: ghcr.io/sagernet/sing-box:latest
     container_name: naive
@@ -38,13 +38,11 @@ services:
     volumes:
       - ./naive/entrypoint.sh:/entrypoint.sh:ro
       - ./warp/lib.sh:/wg-lib.sh:ro
-      - warp_profile:/warp:ro
     entrypoint: ["/bin/sh", "/entrypoint.sh"]
     depends_on:
-      warp-reg:
-        condition: service_completed_successfully
+      - warp-lb
 
-  # Xray INBOUND (VLESS over ws + xhttp)
+  # Xray INBOUND (VLESS over ws + xhttp). Egress -> warp-lb SOCKS.
   xray:
     image: teddysun/xray:latest
     container_name: xray
@@ -56,18 +54,16 @@ services:
     volumes:
       - ./xray/entrypoint.sh:/entrypoint.sh:ro
       - ./warp/lib.sh:/wg-lib.sh:ro
-      - warp_profile:/warp:ro
     entrypoint: ["/bin/sh", "/entrypoint.sh"]
     depends_on:
-      warp-reg:
-        condition: service_completed_successfully
+      - warp-lb
 
   decoy:
     image: ghcr.io/alam00000/bentopdf-simple:latest
     container_name: decoy
     restart: unless-stopped
 
-  # One-shot wgcf registration -> writes wgcf-profile.conf to the shared volume
+  # One-shot: register N WARP accounts -> warp1..N.conf (Table=off) in warp_confs.
   warp-reg:
     image: virb3/wgcf:latest
     container_name: warp-reg
@@ -75,13 +71,53 @@ services:
     environment:
       - WARP_EGRESS=${WARP_EGRESS:-true}
       - WARP_LICENSE_KEY=${WARP_LICENSE_KEY:-}
+      - WARP_ACCOUNTS=${WARP_ACCOUNTS:-4}
+      # Distinct WARP edge per tunnel (avoids per-source-IP throttling). Comma- or
+      # space-separated; blank falls back to the default WARP endpoint domain.
+      - WARP_ENDPOINTS=${WARP_ENDPOINTS:-}
+      # Set to true (once) to discard existing profiles and re-register fresh.
+      - WARP_FORCE_REGEN=${WARP_FORCE_REGEN:-false}
     volumes:
-      - warp_profile:/profile
+      - warp_confs:/confs
       - ./warp/lib.sh:/wg-lib.sh:ro
       - ./warp/register.sh:/entrypoint.sh:ro
     entrypoint: ["/bin/sh", "/entrypoint.sh"]
 
+  # Warp tunnels
+  warp-wg:
+    image: lscr.io/linuxserver/wireguard:latest
+    container_name: warp-wg
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    sysctls:
+      - net.ipv4.conf.all.src_valid_mark=1
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+    volumes:
+      - warp_confs:/config/wg_confs
+      - /lib/modules:/lib/modules:ro
+    depends_on:
+      warp-reg:
+        condition: service_completed_successfully
+
+  # load balancer outbound for WARP
+  warp-lb:
+    image: teddysun/xray:latest
+    container_name: warp-lb
+    restart: unless-stopped
+    network_mode: "service:warp-wg"
+    environment:
+      - WARP_ACCOUNTS=${WARP_ACCOUNTS:-4}
+    volumes:
+      - ./warp/gateway.sh:/entrypoint.sh:ro
+    entrypoint: ["/bin/sh", "/entrypoint.sh"]
+    depends_on:
+      - warp-wg
+
 volumes:
   caddy_data:
   caddy_config:
-  warp_profile:
+  warp_confs:

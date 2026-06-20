@@ -1,40 +1,17 @@
 #!/bin/sh
-# Renders the sing-box config
+# Renders the sing-box naive config.
 set -e
 
 LOG_TAG=naive
 # shellcheck source=warp/lib.sh
 . /wg-lib.sh
 
-ENDPOINTS_JSON=""
+WARP_OUTBOUND=""
 ROUTE_FINAL=""
 if warp_on; then
-  load_warp_profile
-
-  ENDPOINTS_JSON=$(cat <<JSON
-  "endpoints": [
-    {
-      "type": "wireguard",
-      "tag": "warp-ep",
-      "system": false,
-      "mtu": 1280,
-      "address": [ $WG_ADDRS ],
-      "private_key": "$WG_KEY",
-      "peers": [
-        {
-          "address": "$WG_HOST",
-          "port": $WG_PORT,
-          "public_key": "$WG_PEER",
-          "allowed_ips": [ "0.0.0.0/0", "::/0" ],
-          "persistent_keepalive_interval": 25
-        }
-      ]
-    }
-  ],
-JSON
-)
-  ROUTE_FINAL='"final": "warp-ep",'
-  echo "[naive] WARP egress ON -> WireGuard endpoint via $WG_HOST:$WG_PORT"
+  WARP_OUTBOUND='{ "type": "socks", "tag": "warp-out", "server": "warp-wg", "server_port": 1080, "version": "5" },'
+  ROUTE_FINAL='"final": "warp-out",'
+  echo "[naive] WARP egress ON -> socks5 warp-wg:1080 (load-balanced WARP)"
 else
   echo "[naive] WARP egress OFF -> direct"
 fi
@@ -45,9 +22,8 @@ cat > /tmp/sing-box/config.json <<EOF
   "log": { "level": "warn" },
   "dns": {
     "servers": [{ "tag": "local", "type": "local" }],
-    "strategy": "ipv4_only"
+    "strategy": "prefer_ipv4"
   },
-$ENDPOINTS_JSON
   "inbounds": [
     {
       "type": "naive",
@@ -61,6 +37,7 @@ $ENDPOINTS_JSON
     }
   ],
   "outbounds": [
+    $WARP_OUTBOUND
     { "type": "direct", "tag": "direct" }
   ],
   "route": {
@@ -86,7 +63,7 @@ $ENDPOINTS_JSON
     "rules": [
       { "domain_suffix": [".ir"], "action": "reject" },
       { "rule_set": "geosite-ir", "action": "reject" },
-      { "action": "resolve", "strategy": "ipv4_only" },
+      { "action": "resolve", "strategy": "prefer_ipv4" },
       { "rule_set": "geoip-ir", "action": "reject" },
       {
         "ip_cidr": [

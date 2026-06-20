@@ -1,37 +1,16 @@
 #!/bin/sh
-# Renders the xray config
+# Renders the xray config.
 set -e
 
 LOG_TAG=xray
 # shellcheck source=warp/lib.sh
 . /wg-lib.sh
 
-# Prepended to outbounds; xray uses the first outbound as the default.
-WG_OUTBOUND=""
+# xray uses the first outbound as the default route.
+WARP_OUTBOUND=""
 if warp_on; then
-  load_warp_profile
-
-  WG_OUTBOUND=$(cat <<JSON
-    {
-      "protocol": "wireguard",
-      "tag": "warp",
-      "settings": {
-        "secretKey": "$WG_KEY",
-        "address": [ $WG_ADDRS ],
-        "peers": [
-          {
-            "publicKey": "$WG_PEER",
-            "endpoint": "$WG_ENDPOINT",
-            "allowedIPs": [ "0.0.0.0/0", "::/0" ],
-            "keepAlive": 25
-          }
-        ],
-        "mtu": 1280
-      }
-    },
-JSON
-)
-  echo "[xray] WARP egress ON -> WireGuard outbound via $WG_ENDPOINT"
+  WARP_OUTBOUND='{ "tag": "warp", "protocol": "socks", "settings": { "servers": [ { "address": "warp-wg", "port": 1080 } ] } },'
+  echo "[xray] WARP egress ON -> socks5 warp-wg:1080 (load-balanced kernel WARP)"
 else
   echo "[xray] WARP egress OFF -> direct (freedom)"
 fi
@@ -42,7 +21,7 @@ cat > /tmp/xray/config.json <<EOF
   "log": { "loglevel": "warning" },
   "dns": {
     "servers": [ "1.1.1.1", "8.8.8.8" ],
-    "queryStrategy": "UseIPv4"
+    "queryStrategy": "UseIP"
   },
   "inbounds": [
     {
@@ -79,8 +58,8 @@ cat > /tmp/xray/config.json <<EOF
     }
   ],
   "outbounds": [
-$WG_OUTBOUND
-    { "protocol": "freedom", "tag": "direct", "settings": { "domainStrategy": "UseIPv4" } },
+    $WARP_OUTBOUND
+    { "protocol": "freedom", "tag": "direct", "settings": { "domainStrategy": "UseIP" } },
     { "protocol": "blackhole", "tag": "blocked" }
   ],
   "routing": {
