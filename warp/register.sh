@@ -64,12 +64,19 @@ EOF
 warp_on || { echo "[warp-reg] WARP egress OFF -> skipping registration"; exit 0; }
 
 mkdir -p "$CONFS"
-[ "$FORCE" = 1 ] && { echo "[warp-reg] WARP_FORCE_REGEN set -> discarding existing profiles"; rm -f "$CONFS"/warp*.conf; }
+[ "$FORCE" = 1 ] && { echo "[warp-reg] WARP_FORCE_REGEN set -> discarding existing profiles"; rm -f "$CONFS"/warp*.conf "$CONFS"/warp*.conf.disabled; }
 
 n=1
 while [ "$n" -le "$N" ]; do
   conf="$CONFS/warp$n.conf"
   ep=$(ep_for "$n" $EPS)
+
+  # Re-enable a profile parked by a previous, smaller WARP_ACCOUNTS so it's
+  # reused (same account/IP) instead of re-registered from scratch.
+  if [ ! -f "$conf" ] && [ -f "$conf.disabled" ]; then
+    mv "$conf.disabled" "$conf"
+    echo "[warp-reg] warp$n re-enabled from parked profile."
+  fi
 
   if [ -f "$conf" ] && grep -q '^PrivateKey' "$conf"; then
     # Reuse the account but re-render so template changes (endpoint) apply.
@@ -105,6 +112,19 @@ while [ "$n" -le "$N" ]; do
   render_conf "$conf" "$pk" "$addr" "$pub" "$ep"
   echo "[warp-reg] warp$n generated (endpoint=$ep)."
   n=$((n + 1))
+done
+
+# Disable tunnels beyond the requested count.
+for f in "$CONFS"/warp*.conf; do
+  [ -e "$f" ] || continue
+  idx=$(basename "$f" | sed 's/^warp//; s/\.conf$//')
+  case "$idx" in
+    ''|*[!0-9]*) continue ;;  # not a warpN.conf -> leave it alone
+  esac
+  if [ "$idx" -gt "$N" ]; then
+    echo "[warp-reg] disabling warp$idx (WARP_ACCOUNTS=$N) -> $(basename "$f").disabled"
+    mv -f "$f" "$f.disabled"
+  fi
 done
 
 echo "[warp-reg] $N WARP profile(s) ready in $CONFS."
