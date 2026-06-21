@@ -6,6 +6,8 @@ LOG_TAG=xray
 # shellcheck source=warp/lib.sh
 . /wg-lib.sh
 
+: "${VISION_SNI:?set VISION_SNI}"
+
 # xray uses the first outbound as the default route.
 WARP_OUTBOUND=""
 if warp_on; then
@@ -14,6 +16,29 @@ if warp_on; then
 else
   echo "[xray] WARP egress OFF -> direct (freedom)"
 fi
+
+echo "[xray] waiting for wildcard cert for ${BASE_DOMAIN} (Vision/XHTTP/WS TLS) ..."
+CERT_CRT=""
+CERT_KEY=""
+i=0
+while [ "$i" -lt 150 ]; do
+  CERT_DIR=$(ls -d /caddy-data/caddy/certificates/*/wildcard_.${BASE_DOMAIN} 2>/dev/null | head -1)
+  if [ -n "$CERT_DIR" ] \
+     && [ -s "${CERT_DIR}/wildcard_.${BASE_DOMAIN}.crt" ] \
+     && [ -s "${CERT_DIR}/wildcard_.${BASE_DOMAIN}.key" ]; then
+    CERT_CRT="${CERT_DIR}/wildcard_.${BASE_DOMAIN}.crt"
+    CERT_KEY="${CERT_DIR}/wildcard_.${BASE_DOMAIN}.key"
+    break
+  fi
+  i=$((i + 1))
+  sleep 2
+done
+if [ -z "$CERT_CRT" ]; then
+  echo "[xray] FATAL: wildcard cert for ${BASE_DOMAIN} not found under /caddy-data after ~5min." >&2
+  echo "[xray]   Is Caddy issuing *.${BASE_DOMAIN}? Did acme_ca / BASE_DOMAIN change?" >&2
+  exit 1
+fi
+echo "[xray] wildcard cert: ${CERT_CRT} (hot-reloaded on renewal; oneTimeLoading default false)"
 
 mkdir -p /tmp/xray
 cat > /tmp/xray/config.json <<EOF
@@ -25,35 +50,62 @@ cat > /tmp/xray/config.json <<EOF
   },
   "inbounds": [
     {
-      "tag": "ws-in",
+      "tag": "vision-in",
       "listen": "0.0.0.0",
-      "port": 2080,
+      "port": 8443,
       "protocol": "vless",
       "settings": {
-        "clients": [ { "id": "$XRAY_UUID", "flow": "" } ],
+        "clients": [ { "id": "$XRAY_UUID", "flow": "xtls-rprx-vision" } ],
         "decryption": "none"
       },
       "streamSettings": {
-        "network": "ws",
-        "security": "none",
-        "wsSettings": { "path": "$XRAY_PATH" },
-        "sockopt": { "trustedXForwardedFor": [ "X-Forwarded-For" ] }
+        "network": "tcp",
+        "security": "tls",
+        "tlsSettings": {
+          "serverName": "$VISION_SNI",
+          "alpn": [ "h2", "http/1.1" ],
+          "certificates": [ { "certificateFile": "$CERT_CRT", "keyFile": "$CERT_KEY" } ]
+        }
       }
     },
     {
       "tag": "xhttp-in",
       "listen": "0.0.0.0",
-      "port": 2081,
+      "port": 8444,
       "protocol": "vless",
       "settings": {
-        "clients": [ { "id": "$XRAY_UUID", "flow": "" } ],
+        "clients": [ { "id": "$XRAY_UUID" } ],
         "decryption": "none"
       },
       "streamSettings": {
         "network": "xhttp",
-        "security": "none",
-        "xhttpSettings": { "path": "$XRAY_PATH", "mode": "auto" },
-        "sockopt": { "trustedXForwardedFor": [ "X-Forwarded-For" ] }
+        "security": "tls",
+        "sockopt": { "trustedXForwardedFor": [ "CF-Connecting-IP", "X-Forwarded-For" ] },
+        "tlsSettings": {
+          "alpn": [ "h2", "http/1.1" ],
+          "certificates": [ { "certificateFile": "$CERT_CRT", "keyFile": "$CERT_KEY" } ]
+        },
+        "xhttpSettings": { "path": "$XRAY_PATH", "mode": "auto" }
+      }
+    },
+    {
+      "tag": "ws-in",
+      "listen": "0.0.0.0",
+      "port": 8445,
+      "protocol": "vless",
+      "settings": {
+        "clients": [ { "id": "$XRAY_UUID" } ],
+        "decryption": "none"
+      },
+      "streamSettings": {
+        "network": "ws",
+        "security": "tls",
+        "sockopt": { "trustedXForwardedFor": [ "CF-Connecting-IP", "X-Forwarded-For" ] },
+        "tlsSettings": {
+          "alpn": [ "http/1.1" ],
+          "certificates": [ { "certificateFile": "$CERT_CRT", "keyFile": "$CERT_KEY" } ]
+        },
+        "wsSettings": { "path": "$XRAY_PATH" }
       }
     }
   ],
@@ -95,5 +147,8 @@ cat > /tmp/xray/config.json <<EOF
   }
 }
 EOF
+
+echo "[xray] validating rendered config ..."
+xray run -test -c /tmp/xray/config.json
 
 exec xray run -c /tmp/xray/config.json

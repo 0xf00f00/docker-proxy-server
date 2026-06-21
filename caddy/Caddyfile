@@ -1,7 +1,9 @@
 {
 	email {$CERTIFICATE_EMAIL}
 	acme_dns cloudflare {env.CLOUDFLARE_API_TOKEN}
-	order forward_proxy before reverse_proxy
+	# Pin to a single CA so exactly one cert dir exists under caddy_data
+	# Makes it easier for xray to find the cert
+	acme_ca https://acme-v02.api.letsencrypt.org/directory
 }
 
 (common) {
@@ -10,10 +12,14 @@
 	}
 }
 
-:443, {$WEB_DOMAINS} {
+http://*.{$BASE_DOMAIN} {
+	redir https://{host}{uri} permanent
+}
+
+:443, *.{$BASE_DOMAIN} {
 	import common
 
-	# Authenticated CONNECT -> sing-box naive. 
+	# Authenticated CONNECT -> sing-box naive.
 	@naive {
 		method CONNECT
 		header Proxy-Authorization "Basic {env.PROXY_AUTH_B64}"
@@ -21,33 +27,6 @@
 	handle @naive {
 		reverse_proxy h2c://naive:1080 {
 			header_up Proxy-Authorization {header.Proxy-Authorization}
-		}
-	}
-
-	# xray VLESS / WebSocket
-	#
-	# xray trusts X-Forwarded-For (see xray/entrypoint.sh). Caddy already
-	# discards any client-supplied XFF by default and sets it to the real
-	# client IP, so the value xray records can't be spoofed.
-	@xray_ws {
-		path {$XRAY_PATH} {$XRAY_PATH}/*
-		header Connection *pgrade*
-		header Upgrade    *ebsocket*
-	}
-	handle @xray_ws {
-		reverse_proxy xray:2080 {
-			header_up Host {host}
-		}
-	}
-
-	# xray VLESS / XHTTP
-	@xray_xhttp {
-		path {$XRAY_PATH} {$XRAY_PATH}/*
-	}
-	handle @xray_xhttp {
-		reverse_proxy xray:2081 {
-			header_up Host {host}
-			flush_interval -1
 		}
 	}
 

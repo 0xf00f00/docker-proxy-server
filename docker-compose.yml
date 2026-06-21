@@ -1,20 +1,34 @@
 services:
-  caddy:
-    image: ghcr.io/0xf00f00/caddy-proxy:latest
-    container_name: caddy
+  haproxy:
+    image: haproxy:latest
+    container_name: haproxy
     restart: unless-stopped
     ports:
       - "80:80"
       - "443:443"
     environment:
+      - VISION_SNI=${VISION_SNI}
+      - XHTTP_SNI=${XHTTP_SNI}
+      - WS_SNI=${WS_SNI}
+      - BASE_DOMAIN=${BASE_DOMAIN}
+    volumes:
+      - ./haproxy/entrypoint.sh:/haproxy-entrypoint.sh:ro
+    entrypoint: ["/bin/sh", "/haproxy-entrypoint.sh"]
+    depends_on:
+      - caddy
+      - xray
+      - naive
+
+  caddy:
+    image: ghcr.io/0xf00f00/caddy-proxy:latest
+    container_name: caddy
+    restart: unless-stopped
+    environment:
       - CERTIFICATE_EMAIL=${CERTIFICATE_EMAIL}
-      - WEB_DOMAINS=${WEB_DOMAINS}
+      - BASE_DOMAIN=${BASE_DOMAIN}
       - CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN}
       - PROXY_USER=${HTTPS_PROXY_USER}
       - PROXY_PASSWORD=${HTTPS_PROXY_PASSWORD}
-      - PROXY_REJECT_IPS=${HTTPS_PROXY_REJECT_IPS}
-      - PROXY_REJECT_DOMAINS=${HTTPS_PROXY_REJECT_DOMAINS}
-      - XRAY_PATH=${XRAY_PATH}
     entrypoint: ["/bin/sh", "/caddy-entrypoint.sh"]
     volumes:
       - caddy_data:/data
@@ -42,18 +56,26 @@ services:
     depends_on:
       - warp-lb
 
-  # Xray INBOUND (VLESS over ws + xhttp). Egress -> warp-lb SOCKS.
+  # Xray INBOUND
   xray:
     image: teddysun/xray:latest
     container_name: xray
     restart: unless-stopped
+    ports:
+      - "${XRAY_VISION_HOST_PORT:-8443}:8443"
+      - "${XRAY_XHTTP_HOST_PORT:-8444}:8444"
+      - "${XRAY_WS_HOST_PORT:-8445}:8445"
     environment:
       - XRAY_UUID=${XRAY_UUID}
       - XRAY_PATH=${XRAY_PATH}
       - WARP_EGRESS=${WARP_EGRESS:-true}
+      - BASE_DOMAIN=${BASE_DOMAIN}
+      - VISION_SNI=${VISION_SNI}
     volumes:
       - ./xray/entrypoint.sh:/entrypoint.sh:ro
       - ./warp/lib.sh:/wg-lib.sh:ro
+      # Read-only access to Caddy's ACME store
+      - caddy_data:/caddy-data:ro
     entrypoint: ["/bin/sh", "/entrypoint.sh"]
     depends_on:
       - warp-lb
@@ -62,6 +84,25 @@ services:
     image: ghcr.io/alam00000/bentopdf-simple:latest
     container_name: decoy
     restart: unless-stopped
+
+  # Optional: creates the SNI DNS records in Cloudflare for you (CF_DNS_MANAGE=true).
+  # Existing records are left untouched unless CF_DNS_FORCE=true. Runs once and exits.
+  cf-dns:
+    image: alpine:latest
+    container_name: cf-dns
+    restart: "no"
+    environment:
+      - CF_DNS_MANAGE=${CF_DNS_MANAGE:-false}
+      - CF_DNS_FORCE=${CF_DNS_FORCE:-false}
+      - CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN}
+      - BASE_DOMAIN=${BASE_DOMAIN}
+      - VISION_SNI=${VISION_SNI}
+      - XHTTP_SNI=${XHTTP_SNI}
+      - WS_SNI=${WS_SNI}
+      - NAIVE_SNI=${NAIVE_SNI}
+    volumes:
+      - ./cf-dns/entrypoint.sh:/entrypoint.sh:ro
+    entrypoint: ["/bin/sh", "/entrypoint.sh"]
 
   # One-shot: register N WARP accounts -> warp1..N.conf (Table=off) in warp_confs.
   warp-reg:

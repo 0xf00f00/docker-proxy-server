@@ -1,6 +1,6 @@
 # docker-proxy-server
 
-A self-hosted proxy server: **naive** (HTTPS/CONNECT) and **VLESS** (Xray, WebSocket + XHTTP) behind Caddy, with automatic TLS via the Cloudflare DNS challenge.
+A highly opinionated self-hosted proxy server.
 
 Pair it with [docker-proxy-client](https://github.com/0xf00f00/docker-proxy-client) — use the **same tag** on both for compatible versions.
 
@@ -32,6 +32,43 @@ docker compose up -d
 ```
 
 That's it. Point [docker-proxy-client](https://github.com/0xf00f00/docker-proxy-client) at your domain and connect.
+
+---
+
+## Optional: create your DNS records automatically
+
+Instead of adding the `*_SNI` records in the Cloudflare dashboard, let the stack
+create them. In `.env`:
+
+```bash
+CF_DNS_MANAGE=true
+```
+
+Then `docker compose up -d`. Existing records are never changed — to update one,
+set `CF_DNS_FORCE=true`. See the result with `docker compose logs cf-dns`.
+
+---
+
+## Optional: bypass HAProxy (lighter on small boxes)
+
+Skip the HAProxy hop and let Cloudflare reach xray directly. Clients still
+connect on `:443` — no client changes. For **each** of `XHTTP_SNI` and `WS_SNI`,
+in the Cloudflare dashboard:
+
+1. **DNS** — record is proxied (orange cloud).
+2. **SSL/TLS → Overview** — set mode to **Full (strict)**.
+3. **Rules → Origin Rules → Create rule:**
+   - *If* **Hostname** `equals` `xhttp.example.com`
+   - *Then* **Override → Destination Port** → `8444` (use `8445` for `ws.example.com`)
+
+Then lock those ports to Cloudflare so nobody can hit them directly:
+
+```bash
+for ip in $(curl -s https://www.cloudflare.com/ips-v4) $(curl -s https://www.cloudflare.com/ips-v6); do
+  ufw allow from "$ip" to any port 8444,8445 proto tcp
+done
+ufw deny 8444/tcp && ufw deny 8445/tcp
+```
 
 ---
 

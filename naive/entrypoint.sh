@@ -88,4 +88,7 @@ cat > /tmp/sing-box/config.json <<EOF
 }
 EOF
 
+echo "[naive] validating rendered config ..."
+sing-box check -C /tmp/sing-box/
+
 exec sing-box -C /tmp/sing-box/ run
